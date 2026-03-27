@@ -1,0 +1,29 @@
+name: Update EC2 via SSH
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  update-ec2:
+    runs-on: self-hosted
+    environment: deployment
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+
+      - name: Update EC2 instance
+        run: |
+          echo "Testing SSH connection to EC2 instance at ${{ vars.EC2_HOST }}"
+          echo "Logging into EC2 instance at ${{ vars.EC2_HOST }}"
+          ssh -o StrictHostKeyChecking=no ec2-user@${{ vars.EC2_HOST }} 'echo "$HOSTNAME"; if [ "$HOSTNAME" = "${{ vars.EC2_HOSTNAME }}" ]; then echo "Hostname matches"; else echo "Hostname mismatch: $HOSTNAME"; exit 1; fi;'
