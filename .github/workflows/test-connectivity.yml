@@ -13,10 +13,21 @@ on:
 jobs:
   test-connectivity:
     runs-on: self-hosted
-    environment: deployment
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
+
+      - name: Validate manifests
+        run: kubectl kustomize infra/headlamp/
+
+  deploy:
+    runs-on: self-hosted
+    environment: deployment
+    if: github.event_name == 'push'
+    needs: validate
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Set up Ansible
         run: |
