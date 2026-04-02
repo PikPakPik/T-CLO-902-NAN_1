@@ -19,11 +19,10 @@ jobs:
       - name: Set up SSH key
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
+          echo "${{ secrets.ANSIBLE_SSH_KEY }}" > ~/.ssh/kubequest.pem
+          chmod 600 ~/.ssh/kubequest.pem
 
       - name: Update EC2 instance
         run: |
-          echo "Testing SSH connection to EC2 instance at ${{ vars.EC2_HOST }}"
-          echo "Logging into EC2 instance at ${{ vars.EC2_HOST }}"
-          ssh -o StrictHostKeyChecking=no ec2-user@${{ vars.EC2_HOST }} 'echo "$HOSTNAME"; if [ "$HOSTNAME" = "${{ vars.EC2_HOSTNAME }}" ]; then echo "Hostname matches"; else echo "Hostname mismatch: $HOSTNAME"; exit 1; fi;'
+          cd ansible
+          ansible-playbook -i inventory.yml test_connectivity.yml

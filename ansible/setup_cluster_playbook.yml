@@ -1,0 +1,27 @@
+---
+- name: "Installation de Kubernetes"
+  hosts: k8s_cluster
+  gather_facts: yes
+  become: yes
+  tags: common
+
+  roles:
+    - k8s_common
+
+- name: "Installation de Kubernetes Master"
+  hosts: k8s_master
+  gather_facts: yes
+  become: yes
+  tags: master
+
+  roles:
+    - k8s_master
+
+- name: "Installation de Kubernetes Worker"
+  hosts: k8s_workers
+  gather_facts: yes
+  become: yes
+  tags: worker
+
+  roles:
+    - k8s_worker

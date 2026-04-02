@@ -1,0 +1,41 @@
+---
+- name: "[WORKER] Vérifier si le noeud est déjà joint au cluster"
+  stat:
+    path: /etc/kubernetes/kubelet.conf
+  register: worker_joined
+
+- name: "[WORKER] Récupérer la commande join depuis le master"
+  set_fact:
+    kubeadm_join_command: "{{ hostvars[groups['k8s_master'][0]]['kubeadm_join_command'] }}"
+
+- name: "[WORKER] Joindre le cluster Kubernetes"
+  shell: "{{ kubeadm_join_command }}"
+  when: not worker_joined.stat.exists
+  register: join_output
+
+- name: "[WORKER] Afficher le résultat du join"
+  debug:
+    var: join_output.stdout_lines
+  when: join_output is changed
+
+- name: "[WORKER] Exporter KUBECONFIG dans .bashrc (root)"
+  lineinfile:
+    path: /root/.bashrc
+    line: "export KUBECONFIG={{ k8s_worker_config }}"
+    state: present
+
+- name: "[WORKER] Sourcer le KUBECONFIG pour la session courante"
+  shell: source /root/.bashrc
+  args:
+    executable: /bin/bash
+  changed_when: false
+
+- name: "[WORKER] Vérifier les pods locaux sur ce noeud"
+  shell: |
+    KUBECONFIG={{ k8s_worker_config }} kubectl get pods -A --field-selector spec.nodeName=$HOSTNAME 2>/dev/null || echo "Pods visibles depuis le master uniquement"
+  register: local_pods
+  changed_when: false
+
+- name: "[WORKER] Afficher les pods locaux"
+  debug:
+    var: local_pods.stdout_lines

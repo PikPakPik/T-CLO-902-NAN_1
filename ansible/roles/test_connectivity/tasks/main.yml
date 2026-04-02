@@ -1,0 +1,31 @@
+---
+- name: "Test de pingability"
+  ping:
+  register: ping_result
+
+- name: "Récupérer le hostname"
+  command: hostname
+  register: hostname_output
+  changed_when: false
+
+- name: "Afficher les informations de connexion et hostname"
+  debug:
+    msg: |-
+      ========== Informations du host ==========
+      Nom d'hôte: {{ hostname_output.stdout }}
+      Adresse IP (ansible): {{ ansible_host }}
+      IP interne: {{ internal_ip | default('Non définie') }}
+      Utilisateur: {{ ansible_user }}
+      Système d'exploitation: {{ ansible_os_family }}
+      ==========================================
+  when: ping_result is success
+
+- name: "Afficher le résumé de connectivité"
+  debug:
+    msg: "Connexion réussie à {{ inventory_hostname }}"
+  when: ping_result is success
+
+- name: "Erreur de connexion"
+  fail:
+    msg: "Impossible de se connecter à {{ inventory_hostname }}"
+  when: ping_result is failed

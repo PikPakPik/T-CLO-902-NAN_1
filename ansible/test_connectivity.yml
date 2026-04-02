@@ -1,0 +1,8 @@
+---
+- name: "Test de connectivité et vérification des hostnames"
+  hosts: k8s_cluster
+  gather_facts: yes
+  become: yes
+  
+  roles:
+    - test_connectivity

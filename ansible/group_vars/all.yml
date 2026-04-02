@@ -1,0 +1,10 @@
+---
+k8s_version: "v1.35"
+k8s_master_config: "/etc/kubernetes/admin.conf"
+k8s_worker_config: "/etc/kubernetes/kubelet.conf"
+
+calico_version: "v3.31.4"
+calico_manifest_url: "https://raw.githubusercontent.com/projectcalico/calico/{{ calico_version }}/manifests/calico.yaml"
+
+containerd_config_dir: "/etc/containerd"
+containerd_config_file: "config.toml"

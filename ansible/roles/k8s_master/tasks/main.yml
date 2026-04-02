@@ -1,0 +1,73 @@
+---
+- name: "[MASTER] Vérifier si le cluster est déjà initialisé"
+  stat:
+    path: /etc/kubernetes/admin.conf
+  register: kubeadm_init_done
+
+- name: "[MASTER] Initialiser le control-plane avec kubeadm"
+  command: kubeadm init
+  when: not kubeadm_init_done.stat.exists
+  register: kubeadm_init_output
+
+- name: "[MASTER] Afficher l'output de kubeadm init"
+  debug:
+    var: kubeadm_init_output.stdout_lines
+  when: kubeadm_init_output is changed
+
+- name: "[MASTER] Exporter KUBECONFIG dans .bashrc (root)"
+  lineinfile:
+    path: /root/.bashrc
+    line: "export KUBECONFIG={{ k8s_master_config }}"
+    state: present
+
+- name: "[MASTER] Sourcer le KUBECONFIG pour la session courante"
+  shell: source /root/.bashrc
+  args:
+    executable: /bin/bash
+  changed_when: false
+
+- name: "[CALICO] Attendre que l'API server soit disponible"
+  wait_for:
+    host: 127.0.0.1
+    port: 6443
+    timeout: 120
+    state: started
+
+- name: "[CALICO] Vérifier si Calico est déjà déployé"
+  shell: |
+    KUBECONFIG={{ k8s_master_config }} kubectl get daemonset calico-node -n kube-system 2>/dev/null
+  register: calico_check
+  failed_when: false
+  changed_when: false
+
+- name: "[CALICO] Déployer le CNI Calico {{ calico_version }}"
+  shell: |
+    KUBECONFIG={{ k8s_master_config }} kubectl apply -f {{ calico_manifest_url }}
+  when: calico_check.rc != 0
+
+- name: "[MASTER] Récupérer la commande kubeadm join"
+  shell: kubeadm token create --print-join-command
+  register: join_command
+  changed_when: false
+
+- name: "[MASTER] Sauvegarder la commande join dans un fact partagé"
+  set_fact:
+    kubeadm_join_command: "{{ join_command.stdout }}"
+
+- name: "[MASTER] Vérifier l'état des noeuds"
+  shell: KUBECONFIG={{ k8s_master_config }} kubectl get nodes -o wide
+  register: nodes_status
+  changed_when: false
+
+- name: "[MASTER] Afficher l'état des noeuds"
+  debug:
+    var: nodes_status.stdout_lines
+
+- name: "[MASTER] Vérifier l'état des pods"
+  shell: KUBECONFIG={{ k8s_master_config }} kubectl get pods -A -o wide
+  register: pods_status
+  changed_when: false
+
+- name: "[MASTER] Afficher l'état des pods"
+  debug:
+    var: pods_status.stdout_lines
