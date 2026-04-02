@@ -84,25 +84,6 @@
   register: headlamp_cluster_status
   changed_when: false
 
-- name: "[HEADLAMP] Générer un token pour le ServiceAccount headlamp-admin"
-  shell: |
-    set -euo pipefail
-    KUBECONFIG="{{ k8s_master_config }}" kubectl create token headlamp-admin -n headlamp \
-      --duration={{ headlamp_token_duration | default('48h') }}
-  args:
-    executable: /bin/bash
-  register: headlamp_sa_token
-  no_log: true
-
-- name: "[HEADLAMP] Enregistrer le token sur le master (root uniquement)"
-  copy:
-    dest: /root/headlamp-admin.token
-    content: "{{ headlamp_sa_token.stdout | trim }}\n"
-    owner: root
-    group: root
-    mode: "0600"
-  no_log: true
-
 - name: "[HEADLAMP] Résumé — où est le Pod et comment ouvrir l'UI (NodePort 30080)"
   vars:
     master_public: "{{ hostvars[groups['k8s_master'][0]]['ansible_host'] }}"
@@ -124,8 +105,5 @@
         http://<IP_publique_EC2>:30080
         (NodePort est publié sur chaque nœud ; le Pod Headlamp est schedulé sur {{ headlamp_target_worker | default('worker1') }}.)
 
-      --- Token Headlamp ---
-      Un token a été généré (durée {{ headlamp_token_duration | default('48h') }}) et enregistré sur le master uniquement :
-        sudo cat /root/headlamp-admin.token
-      Il n'est pas affiché dans la sortie Ansible (no_log) : évite les fuites dans ansible.log / CI.
+      Authentification : générer un token à la demande sur le master (voir docs/headlamp.md), sans le faire apparaître dans les logs ou CI.
 

@@ -85,15 +85,15 @@ En environnement réel, on réduit les droits au **minimum nécessaire** (Role/C
 
 ## Authentification
 
-Headlamp utilise les tokens Kubernetes pour l'authentification. Pour générer un token d'accès depuis le ServiceAccount `headlamp-admin` :
+Headlamp s’authentifie avec un **token Kubernetes** du ServiceAccount `headlamp-admin`. Le playbook **ne génère ni n’enregistre** de token : ainsi rien ne transite dans les sorties Ansible, les logs ou un fichier prévisible sur le master.
+
+Sur le **master**, après déploiement, crée un token **quand tu en as besoin** (durée limitée, ex. 48h) :
 
 ```bash
-KUBECONFIG=/etc/kubernetes/admin.conf kubectl create token headlamp-admin -n headlamp
+sudo KUBECONFIG=/etc/kubernetes/admin.conf kubectl create token headlamp-admin -n headlamp --duration=48h
 ```
 
-Coller le token dans l'interface web au moment de la connexion.
-
-Le playbook Ansible `deploy_headlamp.yml` génère aussi un token (durée configurable avec `headlamp_token_duration`, défaut `48h`) et l'enregistre sur le master dans **`/root/headlamp-admin.token`** (à lire avec `sudo cat ...`). Les tâches concernées utilisent **`no_log`** pour éviter d'écrire le secret dans la sortie Ansible ou `ansible/ansible.log`.
+Colle le jeton **une seule fois** dans l’UI Headlamp ; **ne le copie pas** dans des tickets, chats ou commits. Pour une nouvelle session, régénère un token avec la même commande.
 
 ### Chemin Kustomize côté Ansible
 
