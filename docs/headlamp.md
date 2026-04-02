@@ -77,11 +77,13 @@ KUBECONFIG=/etc/kubernetes/admin.conf kubectl get pods,svc,endpoints -n headlamp
 
 Si le Pod est `Running` et que les **endpoints** du service `headlamp-nodeport` ne sont pas vides, Kubernetes est correct ; en cas de page inaccessible, le problème est **réseau (URL, SG, tunnel)**, pas le chart.
 
-## RBAC (pourquoi `cluster-admin` ?)
+## RBAC
 
-Le `ClusterRoleBinding` livré sous `infra/headlamp/` attache le ServiceAccount `headlamp-admin` au rôle intégré **`cluster-admin`**. C’est **volontairement large** : en TP / labo, ça évite de lister des dizaines de permissions pour qu’une UI type Headlamp puisse tout afficher (workloads, RBAC, etc.).
+Le `ClusterRoleBinding` attache le ServiceAccount `headlamp-admin` au `ClusterRole` dédié **`headlamp-viewer`** (défini dans `infra/headlamp/clusterrole.yaml`).
 
-En environnement réel, on réduit les droits au **minimum nécessaire** (Role/ClusterRole dédié, audience limitée, pas d’accès aux secrets du cluster pour une UI grand public, audit, etc.). Ici le sujet est la mise en place du cluster et d’un outil d’exploration, pas la moindre-privilège stricte.
+Ce rôle accorde uniquement `get/list/watch` sur les ressources nécessaires à l’affichage dans Headlamp : workloads (pods, deployments, daemonsets, statefulsets…), services, namespaces, nœuds, RBAC, ingresses, stockage, etc. **Aucune écriture n’est autorisée.**
+
+> Note : les `Secrets` sont volontairement exclus — Headlamp n’en a pas besoin pour visualiser le cluster, et les exposer via une UI web serait un vecteur de risque inutile.
 
 ## Authentification
 
