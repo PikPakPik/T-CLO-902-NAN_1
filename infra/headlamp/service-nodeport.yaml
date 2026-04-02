@@ -1,4 +1,4 @@
-# TODO ALEXANDRE : remplacer par une HTTPRoute une fois nginx-gateway-fabric déployé
+# TODO: remplacer par une HTTPRoute une fois nginx-gateway-fabric déployé
 apiVersion: v1
 kind: Service
 metadata:
