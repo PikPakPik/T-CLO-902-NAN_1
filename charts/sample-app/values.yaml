@@ -1,0 +1,32 @@
+replicaCount: 2
+
+image:
+  repository: "notre-registry-prive/sample-app"
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+ingress:
+  enabled: false
+
+httpRoute:
+  enabled: false
+
+service:
+  type: ClusterIP
+  port: 80
+
+autoscaling:
+  enabled: false
+serviceAccount:
+  create: true
+
+app:
+  env: "production"
+  debug: false
+  key: ""
+
+database:
+  host: "t-clo-902-db-cluster"
+  name: "laravel"
+  user: "sample_app_user"
+  password: ""
