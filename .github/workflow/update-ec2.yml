@@ -1,4 +1,4 @@
-name: Update EC2 via SSH
+name: Tester la connectivité des instances EC2
 
 on:
   push:
@@ -9,7 +9,7 @@ on:
       - main
 
 jobs:
-  update-ec2:
+  test-connectivity:
     runs-on: self-hosted
     environment: deployment
     steps:
@@ -19,10 +19,10 @@ jobs:
       - name: Set up SSH key
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.ANSIBLE_SSH_KEY }}" > ~/.ssh/kubequest.pem
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/kubequest.pem
           chmod 600 ~/.ssh/kubequest.pem
 
-      - name: Update EC2 instance
+      - name: Test connectivity to EC2 instances
         run: |
           cd ansible
           ansible-playbook -i inventory.yml test_connectivity.yml
