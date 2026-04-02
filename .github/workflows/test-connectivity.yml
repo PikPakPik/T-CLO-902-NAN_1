@@ -24,10 +24,10 @@ jobs:
     runs-on: self-hosted
     environment: deployment
     if: github.event_name == 'push'
-    needs: validate
+    needs: test-connectivity
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up Ansible
         run: |
