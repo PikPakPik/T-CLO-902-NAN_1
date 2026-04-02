@@ -33,17 +33,68 @@ Headlamp est déployé via deux mécanismes combinés :
 1. **Helm** — installe/met à jour le chart officiel Headlamp
 2. **Kustomize** — applique les ressources complémentaires (ServiceAccount, RBAC, exposition réseau)
 
+> Note : ces commandes sont exécutées sur le **master** (control-plane), car c'est lui qui possède le kubeconfig admin
+> (`/etc/kubernetes/admin.conf`) permettant d'administrer le cluster.
+
 ```bash
 helm upgrade --install headlamp headlamp/headlamp --namespace headlamp --create-namespace
 kubectl apply -k infra/headlamp/
 ```
+
+### Déploiement via Ansible (recommandé)
+
+Pour automatiser le déploiement sur les instances EC2, on utilise Ansible pour exécuter Helm puis appliquer `infra/headlamp/`
+sur le host `k8s_master` (jump host + kubeconfig admin).
+
+```bash
+cd ansible
+ansible-playbook -i inventory.yml deploy_headlamp.yml
+```
+
+Le playbook force le **Pod** Headlamp sur **worker1** : un `nodeSelector` cible le nœud Kubernetes dont l’adresse interne correspond à `worker1` dans `inventory.yml` (IP privée du VPC).
+
+## Accès à l’interface sur EC2
+
+Headlamp est exposé en **NodePort `30080`** (Service `headlamp-nodeport`). Le Pod peut être sur **worker1 uniquement**, mais le port **30080 écoute sur chaque nœud** du cluster (comportement NodePort).
+
+Dans ce dépôt, **`ansible_host` des workers est une IP privée** (ex. `10.0.3.198`). **Depuis ton PC sur Internet**, `http://10.0.3.198:30080` ne fonctionne en principe **pas** : cette IP n’est pas routable hors du VPC.
+
+**Deux approches possibles :**
+
+1. **Tunnel SSH via le master** (souvent le plus simple) :
+   ```bash
+   ssh -i ~/.ssh/kubequest.pem -N -L 30080:127.0.0.1:30080 ec2-user@IP_PUBLIQUE_DU_MASTER
+   ```
+   Puis ouvre **http://localhost:30080** dans le navigateur.
+
+2. **Security group AWS** : ouvrir **TCP 30080** en entrée vers l’**IP publique** de l’instance que tu cibles (master ou worker), puis `http://IP_PUBLIQUE:30080`.
+
+Vérification sur le master :
+
+```bash
+KUBECONFIG=/etc/kubernetes/admin.conf kubectl get pods,svc,endpoints -n headlamp -o wide
+```
+
+Si le Pod est `Running` et que les **endpoints** du service `headlamp-nodeport` ne sont pas vides, Kubernetes est correct ; en cas de page inaccessible, le problème est **réseau (URL, SG, tunnel)**, pas le chart.
+
+## RBAC (pourquoi `cluster-admin` ?)
+
+Le `ClusterRoleBinding` livré sous `infra/headlamp/` attache le ServiceAccount `headlamp-admin` au rôle intégré **`cluster-admin`**. C’est **volontairement large** : en TP / labo, ça évite de lister des dizaines de permissions pour qu’une UI type Headlamp puisse tout afficher (workloads, RBAC, etc.).
+
+En environnement réel, on réduit les droits au **minimum nécessaire** (Role/ClusterRole dédié, audience limitée, pas d’accès aux secrets du cluster pour une UI grand public, audit, etc.). Ici le sujet est la mise en place du cluster et d’un outil d’exploration, pas la moindre-privilège stricte.
 
 ## Authentification
 
 Headlamp utilise les tokens Kubernetes pour l'authentification. Pour générer un token d'accès depuis le ServiceAccount `headlamp-admin` :
 
 ```bash
-kubectl create token headlamp-admin -n headlamp
+KUBECONFIG=/etc/kubernetes/admin.conf kubectl create token headlamp-admin -n headlamp
 ```
 
 Coller le token dans l'interface web au moment de la connexion.
+
+Le playbook Ansible `deploy_headlamp.yml` génère aussi un token (durée configurable avec `headlamp_token_duration`, défaut `48h`) et l'enregistre sur le master dans **`/root/headlamp-admin.token`** (à lire avec `sudo cat ...`). Les tâches concernées utilisent **`no_log`** pour éviter d'écrire le secret dans la sortie Ansible ou `ansible/ansible.log`.
+
+### Chemin Kustomize côté Ansible
+
+Le rôle charge les fichiers depuis `headlamp_kustomize_src` (défaut : relatif au playbook, voir `roles/headlamp/defaults/main.yml`). Tu peux surcharger ce chemin si le dépôt n'est pas à la racine attendue.

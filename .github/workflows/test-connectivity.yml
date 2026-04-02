@@ -32,7 +32,7 @@ jobs:
     needs: test-connectivity
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
 
       - name: Set up Ansible
         run: |

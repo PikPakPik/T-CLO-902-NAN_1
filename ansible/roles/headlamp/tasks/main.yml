@@ -1,0 +1,131 @@
+---
+- name: "[HEADLAMP] Vérifier que kubectl est disponible"
+  command: kubectl version --client=true
+  register: kubectl_client_version
+  changed_when: false
+
+- name: "[HEADLAMP] Vérifier que Helm est disponible"
+  command: helm version
+  register: helm_version
+  failed_when: false
+  changed_when: false
+
+- name: "[HEADLAMP] Installer Helm (si absent)"
+  when: helm_version.rc != 0
+  block:
+    - name: "[HEADLAMP] Télécharger le script d'installation Helm"
+      get_url:
+        url: "https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3"
+        dest: /tmp/get-helm-3
+        mode: "0755"
+
+    - name: "[HEADLAMP] Exécuter l'installation Helm"
+      command: /tmp/get-helm-3
+
+- name: "[HEADLAMP] Ajouter le repo Helm headlamp"
+  shell: |
+    set -euo pipefail
+    helm repo add headlamp https://headlamp-k8s.github.io/headlamp/ 2>/dev/null || true
+    helm repo update
+  args:
+    executable: /bin/bash
+  changed_when: false
+
+- name: "[HEADLAMP] Résoudre le nom de node Kubernetes pour {{ headlamp_target_worker | default('worker1') }}"
+  shell: |
+    set -euo pipefail
+    target_ip="{{ hostvars[headlamp_target_worker | default('worker1')].ansible_host }}"
+    KUBECONFIG="{{ k8s_master_config }}" kubectl get nodes \
+      -o 'custom-columns=NAME:.metadata.name,IP:.status.addresses[?(@.type=="InternalIP")].address' \
+      --no-headers \
+      | awk -v ip="$target_ip" '$2 == ip { print $1; found=1 } END { exit(found?0:1) }'
+  args:
+    executable: /bin/bash
+  register: headlamp_target_node_name
+  changed_when: false
+
+- name: "[HEADLAMP] Vérifier qu'on a trouvé le node Kubernetes cible"
+  fail:
+    msg: "Impossible de trouver le node Kubernetes correspondant à {{ headlamp_target_worker | default('worker1') }} (ip={{ hostvars[headlamp_target_worker | default('worker1')].ansible_host }})"
+  when: headlamp_target_node_name.stdout | trim == ""
+
+- name: "[HEADLAMP] Installer / mettre à jour Headlamp via Helm"
+  shell: |
+    set -euo pipefail
+    target_node="{{ headlamp_target_node_name.stdout | trim }}"
+    KUBECONFIG="{{ k8s_master_config }}" \
+      helm upgrade --install headlamp headlamp/headlamp \
+      --namespace headlamp \
+      --create-namespace \
+      --set "nodeSelector.kubernetes\\.io/hostname=${target_node}"
+  args:
+    executable: /bin/bash
+
+- name: "[HEADLAMP] Copier les manifests Kustomize sur le master"
+  copy:
+    src: "{{ headlamp_kustomize_src }}/"
+    dest: /tmp/kubequest/infra/headlamp/
+    mode: "0644"
+    directory_mode: "0755"
+
+- name: "[HEADLAMP] Appliquer les ressources complémentaires (ServiceAccount/RBAC/Service)"
+  shell: |
+    set -euo pipefail
+    KUBECONFIG="{{ k8s_master_config }}" kubectl apply -k /tmp/kubequest/infra/headlamp/
+  args:
+    executable: /bin/bash
+
+- name: "[HEADLAMP] Vérifier pods / services dans le namespace"
+  shell: |
+    set -euo pipefail
+    KUBECONFIG="{{ k8s_master_config }}" kubectl get pods,svc,endpoints -n headlamp -o wide
+  args:
+    executable: /bin/bash
+  register: headlamp_cluster_status
+  changed_when: false
+
+- name: "[HEADLAMP] Générer un token pour le ServiceAccount headlamp-admin"
+  shell: |
+    set -euo pipefail
+    KUBECONFIG="{{ k8s_master_config }}" kubectl create token headlamp-admin -n headlamp \
+      --duration={{ headlamp_token_duration | default('48h') }}
+  args:
+    executable: /bin/bash
+  register: headlamp_sa_token
+  no_log: true
+
+- name: "[HEADLAMP] Enregistrer le token sur le master (root uniquement)"
+  copy:
+    dest: /root/headlamp-admin.token
+    content: "{{ headlamp_sa_token.stdout | trim }}\n"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+
+- name: "[HEADLAMP] Résumé — où est le Pod et comment ouvrir l'UI (NodePort 30080)"
+  vars:
+    master_public: "{{ hostvars[groups['k8s_master'][0]]['ansible_host'] }}"
+    worker_inv: "{{ hostvars[headlamp_target_worker | default('worker1')]['ansible_host'] }}"
+  debug:
+    msg: |-
+      {{ headlamp_cluster_status.stdout }}
+
+      --- Accès navigateur depuis ton PC ---
+      Ton inventaire utilise des IP privées pour les workers (ex. worker1 = {{ worker_inv }}).
+      Depuis Internet, http://{{ worker_inv }}:30080 ne marchera pas (réseau VPC interne).
+
+      Option A — tunnel SSH via le master (recommandé) :
+        ssh -i ~/.ssh/kubequest.pem -N -L 30080:127.0.0.1:30080 ec2-user@{{ master_public }}
+        Puis ouvre : http://localhost:30080
+
+      Option B — sans tunnel : ouvre le port TCP 30080 (inbound) sur le security group de l'EC2
+        dont tu utilises l'IP publique (master ou n'importe quel worker), puis :
+        http://<IP_publique_EC2>:30080
+        (NodePort est publié sur chaque nœud ; le Pod Headlamp est schedulé sur {{ headlamp_target_worker | default('worker1') }}.)
+
+      --- Token Headlamp ---
+      Un token a été généré (durée {{ headlamp_token_duration | default('48h') }}) et enregistré sur le master uniquement :
+        sudo cat /root/headlamp-admin.token
+      Il n'est pas affiché dans la sortie Ansible (no_log) : évite les fuites dans ansible.log / CI.
+
