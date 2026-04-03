@@ -57,7 +57,7 @@
   lineinfile:
     path: "{{ containerd_config_dir }}/{{ containerd_config_file }}"
     regexp: 'SystemdCgroup = false'
-    replace: 'SystemdCgroup = true'
+    line: 'SystemdCgroup = true'
 
 - name: "Démarrer et activer containerd"
   systemd:
