@@ -1,0 +1,4 @@
+---
+# Répertoire local (contrôleur Ansible) contenant kustomization.yaml et les YAML Headlamp.
+# playbook_dir pointe vers le dossier du playbook (ex. .../ansible) quand on lance deploy_headlamp.yml.
+headlamp_kustomize_src: "{{ playbook_dir }}/../infra/headlamp"
