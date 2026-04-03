@@ -1,30 +1,31 @@
-# Utilisez une image Docker officielle pour PHP 7.4 avec Apache
-FROM php:8.2.8-apache
+# Stage 1 : build
+FROM php:8.2-fpm-alpine AS builder
 
-# Installez les extensions PHP nécessaires
-RUN docker-php-ext-install pdo_mysql
+WORKDIR /var/www/html/
 
-RUN apt-get update && apt-get install -y git unzip p7zip-full
+RUN apk add --no-cache git unzip
+RUN curl -sS https://getcomposer.org/installer | php && mv composer.phar /usr/local/bin/composer
 
-# Installez Composer
-COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
+COPY composer.json composer.lock /var/www/html/
 
-# Copiez les fichiers de l'application dans le conteneur
+RUN composer install --no-dev --optimize-autoloader --no-interaction --no-progress --no-scripts
+
 COPY . /var/www/html/
 
-# Installez les dépendances de l'application
-RUN composer install
+RUN composer dump-autoload --optimize
 
-RUN chown -R www-data:www-data /var/www/html/vendor /var/www/html/storage /var/www/html/bootstrap /var/www/html/public /var/www/html/app /var/www/html/config /var/www/html/routes /var/www/html/resources
-RUN chmod -R 755 /var/www/html/vendor /var/www/html/storage /var/www/html/bootstrap /var/www/html/public /var/www/html/app /var/www/html/config /var/www/html/routes /var/www/html/resources
+# Stage 1 : runtime
+FROM php:8.2-fpm-alpine
 
-# Modifiez la configuration d'Apache pour pointer vers le répertoire public
-ENV APACHE_DOCUMENT_ROOT /var/www/html/public
-RUN sed -ri -e 's!/var/www/html!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/sites-available/*.conf
-RUN sed -ri -e 's!/var/www/!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/apache2.conf /etc/apache2/conf-available/*.conf
+WORKDIR /var/www/html/
 
-# Activez le module Apache Rewrite
-RUN a2enmod rewrite
+RUN apk add --no-cache nginx supervisor bash \
+    && docker-php-ext-install -j$(nproc) pdo_mysql \
+    && cp $PHP_INI_DIR/php.ini-production $PHP_INI_DIR/php.ini \
+    && mkdir -p /etc/nginx/conf.d /var/www/html
 
-# Exposez le port 80
-EXPOSE 80
+COPY ./nginx.conf /etc/nginx/nginx.conf
+COPY ./supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+COPY --from=builder /var/www/html /var/www/html
+
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
