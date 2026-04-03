@@ -1,9 +1,11 @@
 replicaCount: 2
 
 image:
-  repository: "notre-registry-prive/sample-app"
+  repository: "ghcr.io/epitechmscpropromo2026/sample-app"
   pullPolicy: IfNotPresent
   tag: "latest"
+
+imagePullSecrets: []
 
 ingress:
   enabled: false
