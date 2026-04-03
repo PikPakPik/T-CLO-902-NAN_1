@@ -5,8 +5,8 @@ on:
     branches:
       - '*'
     paths:
-      - 'ressource/sample-app-master/Dockerfile'
-      - 'ressource/sample-app-master/**'
+      - 'ressources/sample-app-master/Dockerfile'
+      - 'ressources/sample-app-master/**'
   workflow_dispatch:
     inputs:
       branch:
@@ -49,7 +49,7 @@ jobs:
       - name: Build and push Docker image
         uses: docker/build-push-action@v7
         with:
-          context: ./ressource/sample-app-master
-          file: ./ressource/sample-app-master/Dockerfile
+          context: ./ressources/sample-app-master
+          file: ./ressources/sample-app-master/Dockerfile
           push: true
           tags: ${{ steps.tag.outputs.tag }}
