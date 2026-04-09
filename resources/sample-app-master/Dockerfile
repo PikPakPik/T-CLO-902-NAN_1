@@ -14,7 +14,7 @@ COPY . /var/www/html/
 
 RUN composer dump-autoload --optimize
 
-# Stage 1 : runtime
+# Stage 2 : runtime
 FROM php:8.2-fpm-alpine
 
 WORKDIR /var/www/html/
