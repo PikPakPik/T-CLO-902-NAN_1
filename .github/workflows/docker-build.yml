@@ -24,6 +24,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.inputs.branch || github.ref }}
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4
@@ -46,11 +48,14 @@ jobs:
           IMAGE_BASE="ghcr.io/${OWNER}/${REPO}/sample-app"
           echo "owner=${OWNER}" >> $GITHUB_OUTPUT
           echo "image_base=${IMAGE_BASE}" >> $GITHUB_OUTPUT
-          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+          EFFECTIVE_REF="${{ github.event.inputs.branch != '' && format('refs/heads/{0}', github.event.inputs.branch) || github.ref }}"
+          if [ "${EFFECTIVE_REF}" = "refs/heads/main" ]; then
             echo "tag=${IMAGE_BASE}:latest" >> $GITHUB_OUTPUT
+            echo "rollback_tag=${IMAGE_BASE}:rollback-demo" >> $GITHUB_OUTPUT
           else
             COMMIT=$(echo "${{ github.sha }}" | cut -c1-12)
             echo "tag=${IMAGE_BASE}:${COMMIT}" >> $GITHUB_OUTPUT
+            echo "rollback_tag=${IMAGE_BASE}:${COMMIT}-rollback-demo" >> $GITHUB_OUTPUT
           fi
 
       - name: Build and push Docker image
@@ -71,4 +76,4 @@ jobs:
           target: rollback-demo
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ${{ steps.tag.outputs.image_base }}:rollback-demo
+          tags: ${{ steps.tag.outputs.rollback_tag }}
