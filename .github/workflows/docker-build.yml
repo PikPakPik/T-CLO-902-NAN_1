@@ -42,6 +42,7 @@ jobs:
         id: tag
         run: |
           OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          echo "owner=${OWNER}" >> $GITHUB_OUTPUT
           if [ "${{ github.ref }}" = "refs/heads/main" ]; then
             echo "tag=ghcr.io/${OWNER}/sample-app:latest" >> $GITHUB_OUTPUT
           else
@@ -54,6 +55,17 @@ jobs:
         with:
           context: ./resources/sample-app-master
           file: ./resources/sample-app-master/Dockerfile
+          target: production
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.tag.outputs.tag }}
+
+      - name: Build and push rollback-demo image
+        uses: docker/build-push-action@v7
+        with:
+          context: ./resources/sample-app-master
+          file: ./resources/sample-app-master/Dockerfile
+          target: rollback-demo
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ghcr.io/${{ steps.tag.outputs.owner }}/sample-app:rollback-demo

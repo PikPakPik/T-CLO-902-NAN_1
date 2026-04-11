@@ -14,8 +14,8 @@ COPY . /var/www/html/
 
 RUN composer dump-autoload --optimize
 
-# Stage 2 : runtime
-FROM php:8.2-fpm-alpine
+# Stage 2 : runtime (shared layers for production and rollback-demo)
+FROM php:8.2-fpm-alpine AS runtime
 
 WORKDIR /var/www/html/
 
@@ -28,4 +28,9 @@ COPY ./nginx.conf /etc/nginx/nginx.conf
 COPY ./supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 COPY --from=builder /var/www/html /var/www/html
 
+# Échec volontaire du Deployment (CMD) ; le hook Helm `migrate` garde son propre command → pratique avec `helm upgrade --wait --atomic`.
+FROM runtime AS rollback-demo
+CMD ["/bin/sh", "-c", "exit 1"]
+
+FROM runtime AS production
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
