@@ -48,7 +48,7 @@ jobs:
           IMAGE_BASE="ghcr.io/${OWNER}/${REPO}/sample-app"
           echo "owner=${OWNER}" >> $GITHUB_OUTPUT
           echo "image_base=${IMAGE_BASE}" >> $GITHUB_OUTPUT
-          EFFECTIVE_REF="${{ github.event.inputs.branch != '' && format('refs/heads/{0}', github.event.inputs.branch) || github.ref }}"
+          EFFECTIVE_REF="${{ github.event.inputs.branch && format('refs/heads/{0}', github.event.inputs.branch) || github.ref }}"
           if [ "${EFFECTIVE_REF}" = "refs/heads/main" ]; then
             echo "tag=${IMAGE_BASE}:latest" >> $GITHUB_OUTPUT
             echo "rollback_tag=${IMAGE_BASE}:rollback-demo" >> $GITHUB_OUTPUT
