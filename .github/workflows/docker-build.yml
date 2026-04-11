@@ -42,12 +42,15 @@ jobs:
         id: tag
         run: |
           OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          REPO=$(echo "${{ github.event.repository.name }}" | tr '[:upper:]' '[:lower:]')
+          IMAGE_BASE="ghcr.io/${OWNER}/${REPO}/sample-app"
           echo "owner=${OWNER}" >> $GITHUB_OUTPUT
+          echo "image_base=${IMAGE_BASE}" >> $GITHUB_OUTPUT
           if [ "${{ github.ref }}" = "refs/heads/main" ]; then
-            echo "tag=ghcr.io/${OWNER}/sample-app:latest" >> $GITHUB_OUTPUT
+            echo "tag=${IMAGE_BASE}:latest" >> $GITHUB_OUTPUT
           else
             COMMIT=$(echo "${{ github.sha }}" | cut -c1-12)
-            echo "tag=ghcr.io/${OWNER}/sample-app:${COMMIT}" >> $GITHUB_OUTPUT
+            echo "tag=${IMAGE_BASE}:${COMMIT}" >> $GITHUB_OUTPUT
           fi
 
       - name: Build and push Docker image
@@ -68,4 +71,4 @@ jobs:
           target: rollback-demo
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ghcr.io/${{ steps.tag.outputs.owner }}/sample-app:rollback-demo
+          tags: ${{ steps.tag.outputs.image_base }}:rollback-demo
