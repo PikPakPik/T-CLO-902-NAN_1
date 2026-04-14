@@ -40,6 +40,8 @@ jobs:
 
       - name: Validate Ansible syntax
         run: ansible-playbook -i ansible/inventory.yml ansible/test_connectivity.yml --syntax-check
+        env:
+          ANSIBLE_CONFIG: ansible/ansible.cfg
 
   aws:
     name: Run connectivity test on EC2
@@ -65,3 +67,5 @@ jobs:
       - name: Test connectivity to EC2 instances
         run: |
           ansible-playbook -i ansible/inventory.yml ansible/test_connectivity.yml
+        env:
+          ANSIBLE_CONFIG: ansible/ansible.cfg
