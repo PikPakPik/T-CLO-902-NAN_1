@@ -1,17 +1,25 @@
-name: Tester la connectivité des instances EC2
+name: CI - Validate and deploy infrastructure
 
 on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'ansible/**'
+      - 'infra/**'
+      - '.github/workflows/test-connectivity.yml'
   push:
     branches:
       - main
-  pull_request:
-    types:
-      - closed
-    branches:
-      - main
+    paths:
+      - 'ansible/**'
+      - 'infra/**'
+      - '.github/workflows/test-connectivity.yml'
 
 jobs:
-  test-connectivity:
+  validate:
+    name: Validate manifests and connectivity playbook
     runs-on: self-hosted
     steps:
       - name: Checkout repository
@@ -25,11 +33,15 @@ jobs:
       - name: Validate manifests
         run: kubectl kustomize infra/headlamp/
 
-  deploy:
+      - name: Validate Ansible syntax
+        run: ansible-playbook -i ansible/inventory.yml ansible/test_connectivity.yml --syntax-check
+
+  aws:
+    name: Run connectivity test on EC2
     runs-on: self-hosted
     environment: deployment
-    if: github.event_name == 'push'
-    needs: test-connectivity
+    if: github.event_name != 'pull_request'
+    needs: validate
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -47,5 +59,4 @@ jobs:
 
       - name: Test connectivity to EC2 instances
         run: |
-          cd ansible
-          ansible-playbook -i inventory.yml test_connectivity.yml
+          ansible-playbook -i ansible/inventory.yml ansible/test_connectivity.yml
