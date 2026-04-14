@@ -24,6 +24,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.inputs.branch || github.ref }}
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4
@@ -42,11 +44,18 @@ jobs:
         id: tag
         run: |
           OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
-          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
-            echo "tag=ghcr.io/${OWNER}/sample-app:latest" >> $GITHUB_OUTPUT
+          REPO=$(echo "${{ github.event.repository.name }}" | tr '[:upper:]' '[:lower:]')
+          IMAGE_BASE="ghcr.io/${OWNER}/${REPO}/sample-app"
+          echo "owner=${OWNER}" >> $GITHUB_OUTPUT
+          echo "image_base=${IMAGE_BASE}" >> $GITHUB_OUTPUT
+          EFFECTIVE_REF="${{ github.event.inputs.branch && format('refs/heads/{0}', github.event.inputs.branch) || github.ref }}"
+          if [ "${EFFECTIVE_REF}" = "refs/heads/main" ]; then
+            echo "tag=${IMAGE_BASE}:latest" >> $GITHUB_OUTPUT
+            echo "rollback_tag=${IMAGE_BASE}:rollback-demo" >> $GITHUB_OUTPUT
           else
             COMMIT=$(echo "${{ github.sha }}" | cut -c1-12)
-            echo "tag=ghcr.io/${OWNER}/sample-app:${COMMIT}" >> $GITHUB_OUTPUT
+            echo "tag=${IMAGE_BASE}:${COMMIT}" >> $GITHUB_OUTPUT
+            echo "rollback_tag=${IMAGE_BASE}:${COMMIT}-rollback-demo" >> $GITHUB_OUTPUT
           fi
 
       - name: Build and push Docker image
@@ -54,6 +63,17 @@ jobs:
         with:
           context: ./resources/sample-app-master
           file: ./resources/sample-app-master/Dockerfile
+          target: production
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.tag.outputs.tag }}
+
+      - name: Build and push rollback-demo image
+        uses: docker/build-push-action@v7
+        with:
+          context: ./resources/sample-app-master
+          file: ./resources/sample-app-master/Dockerfile
+          target: rollback-demo
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.tag.outputs.rollback_tag }}
