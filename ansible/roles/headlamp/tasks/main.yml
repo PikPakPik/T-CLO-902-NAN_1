@@ -23,12 +23,13 @@
       command: /tmp/get-helm-3
 
 - name: "[HEADLAMP] Ajouter le repo Helm headlamp"
-  shell: |
-    set -euo pipefail
-    helm repo add headlamp https://headlamp-k8s.github.io/headlamp/ 2>/dev/null || true
-    helm repo update
-  args:
-    executable: /bin/bash
+  command: helm repo add headlamp https://kubernetes-sigs.github.io/headlamp/
+  register: helm_repo_add
+  failed_when: helm_repo_add.rc != 0 and ("already exists" not in (helm_repo_add.stderr | default("")))
+  changed_when: "'already exists' not in (helm_repo_add.stderr | default(''))"
+
+- name: "[HEADLAMP] Mettre a jour les repos Helm"
+  command: helm repo update
   changed_when: false
 
 - name: "[HEADLAMP] Résoudre le nom de node Kubernetes pour {{ headlamp_target_worker | default('worker1') }}"
@@ -67,6 +68,15 @@
     dest: /tmp/kubequest/infra/headlamp/
     mode: "0644"
     directory_mode: "0755"
+
+- name: "[HEADLAMP] Supprimer le ClusterRoleBinding existant (roleRef immuable)"
+  shell: |
+    set -euo pipefail
+    KUBECONFIG="{{ k8s_master_config }}" kubectl delete clusterrolebinding headlamp-admin --ignore-not-found=true
+  args:
+    executable: /bin/bash
+  register: headlamp_crb_delete
+  changed_when: "'deleted' in (headlamp_crb_delete.stdout | lower)"
 
 - name: "[HEADLAMP] Appliquer les ressources complémentaires (ServiceAccount/RBAC/Service)"
   shell: |
