@@ -58,6 +58,12 @@ rules:
     resources:
       - poddisruptionbudgets
     verbs: ["get", "list", "watch"]
+  # Metrics API (Headlamp usage/capacity views)
+  - apiGroups: ["metrics.k8s.io"]
+    resources:
+      - nodes
+      - pods
+    verbs: ["get", "list", "watch"]
   # RBAC (lecture seule pour visualisation dans Headlamp)
   - apiGroups: ["rbac.authorization.k8s.io"]
     resources:
