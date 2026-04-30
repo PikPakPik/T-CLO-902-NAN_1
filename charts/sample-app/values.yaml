@@ -1,9 +1,9 @@
 replicaCount: 2
 
 image:
-  repository: "ghcr.io/epitechmscpropromo2026/sample-app"
+  repository: 'ghcr.io/epitechmscpropromo2026/sample-app'
   pullPolicy: IfNotPresent
-  tag: "latest"
+  tag: 'latest'
 
 imagePullSecrets: []
 
@@ -11,7 +11,21 @@ ingress:
   enabled: false
 
 httpRoute:
-  enabled: false
+  enabled: true
+  parentRefs:
+    - name: public-gateway
+      namespace: envoy-gateway-system
+  hostnames:
+    - 'sample-app.example.com'
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: sample-app
+          port: 80
+          weight: 100
 
 service:
   type: ClusterIP
@@ -23,12 +37,12 @@ serviceAccount:
   create: true
 
 app:
-  env: "production"
+  env: 'production'
   debug: false
-  key: ""
+  key: ''
 
 database:
-  host: "t-clo-902-db-cluster"
-  name: "laravel"
-  user: "sample_app_user"
-  password: ""
+  host: 't-clo-902-db-cluster'
+  name: 'laravel'
+  user: 'sample_app_user'
+  password: ''
