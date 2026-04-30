@@ -1,0 +1,18 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: public-gateway
+  namespace: envoy-gateway-system
+  annotations:
+    # Optionnel : spécifier le type de LoadBalancer AWS
+    service.beta.kubernetes.io/aws-load-balancer-type: nlb
+spec:
+  gatewayClassName: envoy-gateway
+  listeners:
+    # HTTP standard
+    - name: http
+      protocol: HTTP
+      port: 80
+      allowedRoutes:
+        namespaces:
+          from: All # Permet aux routes de tous les namespaces de s'y brancher
