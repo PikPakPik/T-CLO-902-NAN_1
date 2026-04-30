@@ -505,15 +505,20 @@ Ce playbook exécute sur le Master :
 
 **Étape 2 : Déployer le Gateway public**
 
-```bash
-# Se connecter au Master pour kubectl
-ssh -i ~/.ssh/kubequest.pem ec2-user@15.237.15.14
+Via Ansible (recommandé) :
 
-# Sur le Master, déployer le Gateway
-sudo kubectl apply -f /path/to/infra/gateway/gateway-public.yaml
-# Ou depuis ton PC avec kubectl configuré :
-kubectl apply -f infra/gateway/gateway-public.yaml
+```bash
+# Déployer le Gateway public avec le playbook dédié
+ansible-playbook -i inventory.yml deploy_gateway.yml
 ```
+
+Ce playbook crée le Gateway `public-gateway` dans le namespace `envoy-gateway-system` avec :
+
+- Listener HTTP sur port 80
+- AWS NLB (Network Load Balancer) pour les performances
+- Routes autorisées depuis tous les namespaces
+
+> **Pourquoi pas `kubectl apply` ?** Le playbook Ansible évite de copier des fichiers sur le Master et versionne la configuration dans Git via le playbook inline.
 
 **Étape 3 : Vérifier l'installation**
 
@@ -627,9 +632,157 @@ kubectl port-forward svc/sample-app 8080:80
 | ----------------------- | ----------------------------------------------------------------- |
 | **Test connexion SSH**  | `ansible-playbook -i inventory.yml test_connectivity.yml`         |
 | **Install Gateway API** | `ansible-playbook -i inventory.yml install_gateway-api.yml`       |
-| **Déployer Gateway**    | `kubectl apply -f infra/gateway/gateway-public.yaml`              |
+| **Déployer Gateway**    | `ansible-playbook -i inventory.yml deploy_gateway.yml`            |
 | **Déployer app**        | `helm install sample-app charts/sample-app -f secrets.yaml`       |
 | **Mettre à jour app**   | `helm upgrade sample-app charts/sample-app -f secrets.yaml`       |
 | **Supprimer app**       | `helm uninstall sample-app`                                       |
 | **Voir routes**         | `kubectl get httproute`                                           |
 | **Debug Gateway**       | `kubectl describe gateway public-gateway -n envoy-gateway-system` |
+
+---
+
+## Bonnes pratiques d'architecture
+
+### Séparer Gateway API et Envoy Gateway
+
+L'approche recommandée sépare l'**API standard** (infrastructure) de l'**implémentation** (contrôleur) :
+
+```
+┌─────────────────────────────────────────┐
+│  COUCHE 1 : Gateway API (Standard)      │
+│  - CRDs : GatewayClass, Gateway,        │
+│    HTTPRoute, TLSRoute, etc.            │
+│  - Géré par : Cluster Admin               │
+│  - Version : v1.5.0 (standard)          │
+└─────────────────────────────────────────┘
+                    ↓
+┌─────────────────────────────────────────┐
+│  COUCHE 2 : Envoy Gateway (Implémentation) │
+│  - Controller : Envoy Gateway             │
+│  - Namespace : envoy-gateway-system       │
+│  - Géré par : Platform/Ops Team           │
+│  - Version : v1.7.2                       │
+└─────────────────────────────────────────┘
+                    ↓
+┌─────────────────────────────────────────┐
+│  COUCHE 3 : Applications (Usage)          │
+│  - HTTPRoute par application              │
+│  - Géré par : Dev Teams                   │
+└─────────────────────────────────────────┘
+```
+
+**Avantages de cette séparation :**
+
+| Avantage                    | Explication                                                                        |
+| --------------------------- | ---------------------------------------------------------------------------------- |
+| **Standardisation**         | Gateway API v1.5.0 est un standard CNCF. Même API pour tous les clusters.          |
+| **Vendor Independence**     | Tu peux remplacer Envoy par NGINX Gateway, Istio, ou Cilium sans toucher aux CRDs. |
+| **Mises à jour contrôlées** | Met à jour Envoy Gateway sans risquer les CRDs partagées.                          |
+| **Gouvernance claire**      | Cluster Admin = infrastructure, Ops = contrôleur, Devs = routes.                   |
+
+**Quand NE PAS séparer ?**
+
+- PoC rapide : utilise le quickstart officiel
+- Cluster mono-usage : laisser le chart Helm tout gérer
+
+### Pourquoi ne pas utiliser le quickstart ?
+
+Le `quickstart.yaml` de la doc officielle installe :
+
+- Gateway API CRDs
+- Envoy Gateway
+- **+ Un GatewayClass** (envoy-gateway)
+- **+ Un Gateway** (pour exemple)
+- **+ Une HTTPRoute** (pour exemple)
+
+**Problème** : Mélange infrastructure et exemples. En production, tu veux :
+
+- Ton propre Gateway public (avec ton IP AWS, tes certificats)
+- Pas d'exemples qui polluent le cluster
+- Contrôle total sur la configuration
+
+**Solution** : Le playbook Ansible sépare proprement les étapes sans le quickstart.
+
+---
+
+## Alternative : Installation sans dépendances Python
+
+Si ton cluster n'a pas Python ou la bibliothèque `kubernetes` installée, voici une version alternative du playbook utilisant uniquement `kubectl` et `helm` :
+
+```yaml
+---
+- name: Install Gateway API and Envoy Gateway (sans Python)
+  hosts: k8s_master
+  become: yes
+  vars:
+    gateway_api_version: 'v1.5.0'
+    envoy_version: 'v1.7.2'
+  tasks:
+    # ==========================================
+    # ÉTAPE 1 : Gateway API CRDs (via kubectl)
+    # Avantage : Aucune dépendance Python requise
+    # ==========================================
+    - name: 'Install Gateway API CRDs'
+      shell: |
+        set -e
+        export KUBECONFIG={{ k8s_master_config }}
+
+        kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/{{ gateway_api_version }}/standard-install.yaml
+
+        echo "CRDs Gateway API {{ gateway_api_version }} installées"
+      args:
+        executable: /bin/bash
+
+    # ==========================================
+    # ÉTAPE 2 : Envoy Gateway (Helm avec --skip-crds)
+    # ==========================================
+    - name: 'Install Envoy Gateway via Helm'
+      shell: |
+        set -e
+        export KUBECONFIG={{ k8s_master_config }}
+
+        helm upgrade --install envoy-gateway oci://docker.io/envoyproxy/gateway-helm \
+          --version {{ envoy_version }} \
+          --namespace envoy-gateway-system \
+          --create-namespace \
+          --skip-crds \
+          --wait
+
+        echo "Envoy Gateway installé avec succès"
+      args:
+        executable: /bin/bash
+
+    # ==========================================
+    # ÉTAPE 3 : Vérification
+    # ==========================================
+    - name: 'Wait for Envoy Gateway'
+      shell: |
+        export KUBECONFIG={{ k8s_master_config }}
+        kubectl wait --timeout=5m -n envoy-gateway-system deployment/envoy-gateway --for=condition=Available
+      args:
+        executable: /bin/bash
+
+    - name: 'Display status'
+      shell: |
+        export KUBECONFIG={{ k8s_master_config }}
+        echo "=== GatewayClass ==="
+        kubectl get gatewayclass
+        echo ""
+        echo "=== Pods ==="
+        kubectl get pods -n envoy-gateway-system
+      args:
+        executable: /bin/bash
+      changed_when: false
+```
+
+### Comparaison des méthodes
+
+| Aspect                  | `kubernetes.core.k8s`     | `kubectl` shell                 |
+| ----------------------- | ------------------------- | ------------------------------- |
+| **Dépendances**         | Python + lib `kubernetes` | Aucune (kubectl uniquement)     |
+| **Idempotence**         | Native (vérifie l'état)   | À gérer manuellement            |
+| **Messages d'erreur**   | Détails Ansible           | Sortie brute kubectl            |
+| **Intégration Ansible** | Excellente                | Basique                         |
+| **Quand l'utiliser ?**  | Cluster avec Python       | Cluster minimaliste sans Python |
+
+**Note** : La méthode avec `kubernetes.core.k8s` est recommandée si Python est disponible, car elle offre une meilleure intégration avec Ansible (status `changed` précis, gestion d'erreurs, etc.).
