@@ -1,0 +1,39 @@
+---
+- name: "[SEALED-SECRETS] Vérifier si le contrôleur est déjà déployé"
+  shell: |
+    KUBECONFIG={{ k8s_master_config }} kubectl get deployment -n {{ sealed_secrets_controller_namespace }} \
+      -l app.kubernetes.io/name=sealed-secrets -o name 2>/dev/null
+  register: sealed_secrets_check
+  changed_when: false
+  failed_when: false
+
+- name: "[SEALED-SECRETS] Déployer le contrôleur dans le cluster"
+  shell: |
+    KUBECONFIG={{ k8s_master_config }} kubectl apply -f {{ sealed_secrets_controller_manifest_url }}
+  when: sealed_secrets_check.rc != 0
+
+- name: "[SEALED-SECRETS] Attendre que le déploiement soit prêt"
+  shell: |
+    set -euo pipefail
+    DEPLOYMENT_NAME="$(KUBECONFIG={{ k8s_master_config }} kubectl get deployment \
+      -n {{ sealed_secrets_controller_namespace }} \
+      -l app.kubernetes.io/name=sealed-secrets \
+      -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
+    if [ -z "${DEPLOYMENT_NAME}" ]; then
+      DEPLOYMENT_NAME="sealed-secrets-controller"
+    fi
+    KUBECONFIG={{ k8s_master_config }} kubectl rollout status "deployment/${DEPLOYMENT_NAME}" \
+      -n {{ sealed_secrets_controller_namespace }} --timeout=180s
+  changed_when: false
+
+- name: "[SEALED-SECRETS] Afficher l'état du contrôleur"
+  shell: |
+    KUBECONFIG={{ k8s_master_config }} kubectl get pods \
+      -n {{ sealed_secrets_controller_namespace }} \
+      -l app.kubernetes.io/name=sealed-secrets -o wide
+  register: sealed_secrets_status
+  changed_when: false
+
+- name: "[SEALED-SECRETS] Sortie de contrôle"
+  debug:
+    var: sealed_secrets_status.stdout_lines

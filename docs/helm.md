@@ -17,7 +17,9 @@ Dans ce projet, Helm sert à déployer l'application Laravel et sa base de donn�
   - `registry-secret.yaml` : Secret pour l'authentification au registry GHCR.
   - `httproute.yaml` : HTTPRoute Gateway API pour exposer l'app via Envoy Gateway.
 
-> ⚠️ **Important** : Créez un fichier `secrets.yaml` à partir de `secrets.example.yaml` avant tout déploiement.
+> ⚠️ **Important** : Deux modes sont disponibles pour les secrets :
+> - mode classique (`Secret`) via `secrets.example.yaml` ;
+> - mode sécurisé (`SealedSecret`) avec `kubeseal` (recommandé), voir `docs/sealed-secrets.md`.
 
 ## Préparer le fichier secrets.yaml
 
@@ -85,7 +87,7 @@ helm upgrade --install app charts/sample-app \
   -f charts/sample-app/secrets.yaml
 ```
 
-### Depuis le registry GHCR (après publication CI)
+### Mettre à jour l'application
 ```bash
 helm upgrade --install app \
   oci://ghcr.io/epitechmscpropromo2026/t-clo-902-nan_1/charts/sample-app \

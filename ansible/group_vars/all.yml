@@ -41,3 +41,9 @@ worker3_internal_ip: "{{ hostvars[groups['k8s_workers'][2]].ansible_host }}"
 # local-path-provisioner (Rancher) — installé si la StorageClass n'existe pas.
 local_path_provisioner_manifest_url: "https://raw.githubusercontent.com/rancher/local-path-provisioner/v0.0.36/deploy/local-path-storage.yaml"
 local_path_provisioner_rollout_timeout: 300s
+
+
+sealed_secrets_controller_name: "sealed-secrets"
+sealed_secrets_controller_namespace: "kube-system"
+sealed_secrets_controller_version: "v0.32.2"
+sealed_secrets_controller_manifest_url: "https://github.com/bitnami-labs/sealed-secrets/releases/download/{{ sealed_secrets_controller_version }}/controller.yaml"
