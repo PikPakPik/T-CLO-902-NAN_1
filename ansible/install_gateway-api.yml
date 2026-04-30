@@ -2,21 +2,62 @@
 - name: Install Gateway API and Envoy Gateway
   hosts: k8s_master
   become: yes
+  vars:
+    gateway_api_version: 'v1.5.0'
+    envoy_version: 'v1.7.2'
   tasks:
-    - name: Install Gateway API CRDs
+    # ==========================================
+    # ÉTAPE 1 : Gateway API CRDs (via kubernetes.core.k8s)
+    # ==========================================
+    - name: 'Install Gateway API CRDs'
       kubernetes.core.k8s:
-        src: https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.5.0/standard-install.yaml
+        kubeconfig: '{{ k8s_master_config }}'
+        src: 'https://github.com/kubernetes-sigs/gateway-api/releases/download/{{ gateway_api_version }}/standard-install.yaml'
         state: present
 
-    - name: Add Envoy Gateway Helm repo
-      community.kubernetes.helm_repository:
-        name: envoy-gateway
-        repo_url: 'https://envoyproxy.github.io/gateway-helm'
+    # ==========================================
+    # ÉTAPE 2 : Envoy Gateway (Helm avec --skip-crds)
+    # ==========================================
+    # Important : --skip-crds car les CRDs sont déjà installés à l'étape 1
+    - name: 'Install Envoy Gateway via Helm'
+      shell: |
+        set -e
+        export KUBECONFIG={{ k8s_master_config }}
 
-    - name: Install Envoy Gateway
-      community.kubernetes.helm:
-        name: envoy-gateway
-        chart_ref: envoy-gateway/envoy-gateway
-        release_namespace: envoy-gateway-system
-        create_namespace: yes
-        version: v1.7.1
+        echo "Installation d'Envoy Gateway {{ envoy_version }} (sans CRDs)..."
+        helm upgrade --install envoy-gateway oci://docker.io/envoyproxy/gateway-helm \
+          --version {{ envoy_version }} \
+          --namespace envoy-gateway-system \
+          --create-namespace \
+          --skip-crds \
+          --wait
+
+        echo "Envoy Gateway installé avec succès"
+      args:
+        executable: /bin/bash
+
+    # ==========================================
+    # ÉTAPE 3 : Vérification
+    # ==========================================
+    - name: 'Wait for Envoy Gateway to be ready'
+      shell: |
+        export KUBECONFIG={{ k8s_master_config }}
+        kubectl wait --timeout=5m -n envoy-gateway-system deployment/envoy-gateway --for=condition=Available
+      args:
+        executable: /bin/bash
+
+    - name: 'Display installation status'
+      shell: |
+        export KUBECONFIG={{ k8s_master_config }}
+        echo ""
+        echo "=== GatewayClass (créé automatiquement) ==="
+        kubectl get gatewayclass
+        echo ""
+        echo "=== Envoy Gateway Pods ==="
+        kubectl get pods -n envoy-gateway-system
+        echo ""
+        echo "=== CRDs Gateway API installés ==="
+        kubectl get crd | grep gateway.networking.k8s.io | wc -l | xargs echo "CRDs Gateway API :"
+      args:
+        executable: /bin/bash
+      changed_when: false

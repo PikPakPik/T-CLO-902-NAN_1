@@ -1,0 +1,93 @@
+---
+# Playbook : Déploiement du Gateway Public
+# Objectif : Créer le Gateway public qui recevra le trafic HTTP/HTTPS
+# Séparation des responsabilités : Infrastructure (install_gateway-api.yml) vs Configuration (ce fichier)
+
+- name: Deploy Gateway Public
+  hosts: k8s_master
+  become: yes
+  vars:
+    gateway_name: 'public-gateway'
+    gateway_namespace: 'envoy-gateway-system'
+  tasks:
+    # ==========================================
+    # ÉTAPE 1 : Créer le GatewayClass (nécessaire pour que Envoy Gateway reconnaisse le Gateway)
+    # ==========================================
+    - name: 'Create GatewayClass envoy-gateway'
+      kubernetes.core.k8s:
+        kubeconfig: '{{ k8s_master_config }}'
+        state: present
+        definition:
+          apiVersion: gateway.networking.k8s.io/v1
+          kind: GatewayClass
+          metadata:
+            name: envoy-gateway
+          spec:
+            controllerName: gateway.envoyproxy.io/gatewayclass-controller
+            description: 'Envoy Gateway controller'
+
+    # ==========================================
+    # ÉTAPE 2 : Créer le Gateway via template inline
+    # Bonne pratique : Pas de copie de fichier, on génère la ressource directement
+    # Cela permet aussi de paramétrer via Ansible vars si besoin
+    # ==========================================
+    - name: 'Create Gateway public'
+      kubernetes.core.k8s:
+        kubeconfig: '{{ k8s_master_config }}'
+        state: present
+        definition:
+          apiVersion: gateway.networking.k8s.io/v1
+          kind: Gateway
+          metadata:
+            name: '{{ gateway_name }}'
+            namespace: '{{ gateway_namespace }}'
+            # Note : Annotation NLB désactivée pour test
+            # Si le cluster a les IAM permissions AWS, décommenter :
+            # annotations:
+            #   service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+          spec:
+            gatewayClassName: envoy-gateway
+            listeners:
+              # HTTP sur port 80
+              - name: http
+                protocol: HTTP
+                port: 80
+                allowedRoutes:
+                  namespaces:
+                    from: All # Permet aux routes de tous les namespaces
+
+    # ==========================================
+    # ÉTAPE 4 : Attendre que le Gateway soit prêt
+    # ==========================================
+    - name: 'Wait for Gateway to be programmed'
+      shell: |
+        export KUBECONFIG={{ k8s_master_config }}
+        kubectl wait --timeout=3m -n {{ gateway_namespace }} gateway/{{ gateway_name }} --for=condition=Programmed || true
+      args:
+        executable: /bin/bash
+
+    # ==========================================
+    # ÉTAPE 5 : Afficher le statut et l'adresse IP
+    # ==========================================
+    - name: 'Display Gateway status'
+      shell: |
+        export KUBECONFIG={{ k8s_master_config }}
+        echo ""
+        echo "=== Gateway Public Status ==="
+        kubectl get gateway -n {{ gateway_namespace }} {{ gateway_name }} -o wide
+        echo ""
+        echo "=== LoadBalancer Address ==="
+        kubectl get gateway -n {{ gateway_namespace }} {{ gateway_name }} -o jsonpath='{.status.addresses[0].value}' 2>/dev/null || echo "En attente de l'IP..."
+        echo ""
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    - name: 'Get Services in envoy-gateway-system'
+      shell: |
+        export KUBECONFIG={{ k8s_master_config }}
+        echo "=== Services (LoadBalancer) ==="
+        kubectl get svc -n {{ gateway_namespace }}
+      args:
+        executable: /bin/bash
+      changed_when: false
