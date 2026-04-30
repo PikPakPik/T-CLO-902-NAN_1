@@ -48,6 +48,18 @@ rules:
       - ingresses
       - networkpolicies
     verbs: ["get", "list", "watch"]
+  # Gateway API (GatewayClass / Gateway / HTTPRoute, etc.)
+  - apiGroups: ["gateway.networking.k8s.io"]
+    resources:
+      - backendtlspolicies
+      - gatewayclasses
+      - gateways
+      - grpcroutes
+      - httproutes
+      - referencegrants
+      - tcproutes
+      - tlsroutes
+    verbs: ["get", "list", "watch"]
   # Storage
   - apiGroups: ["storage.k8s.io"]
     resources:
