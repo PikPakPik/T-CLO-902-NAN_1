@@ -58,6 +58,7 @@
       helm upgrade --install headlamp headlamp/headlamp \
       --namespace headlamp \
       --create-namespace \
+      --set clusterRoleBinding.create=false \
       --set "nodeSelector.kubernetes\\.io/hostname=${target_node}"
   args:
     executable: /bin/bash
