@@ -1,4 +1,3 @@
-# Généré par scripts/seal-sample-app-secrets.sh — committer ce fichier est OK (données chiffrées).
 secrets:
   useSealedSecrets: true
   scope: strict
