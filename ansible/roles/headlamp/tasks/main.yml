@@ -59,6 +59,7 @@
       --namespace headlamp \
       --create-namespace \
       --set clusterRoleBinding.create=false \
+      --set config.baseURL=/headlamp \
       --set "nodeSelector.kubernetes\\.io/hostname=${target_node}"
   args:
     executable: /bin/bash
