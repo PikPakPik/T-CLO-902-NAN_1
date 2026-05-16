@@ -95,3 +95,15 @@
     name: kubelet
     state: started
     enabled: yes
+
+# Requis par les playbooks Ansible (kubernetes.core.k8s, kubernetes.core.helm).
+- name: "Installer pip"
+  dnf:
+    name: python3-pip
+    state: present
+
+- name: "Installer la bibliothèque Python kubernetes"
+  ansible.builtin.pip:
+    name: "kubernetes>=28.0.0"
+    executable: pip3
+    state: present
