@@ -1,0 +1,97 @@
+---
+# ----- Grafana sur master uniquement -----
+grafana:
+  enabled: true
+  adminPassword: "{{ grafana_admin_password }}"
+  service:
+    type: NodePort
+    nodePort: {{ grafana_nodeport }}
+  nodeSelector:
+    kubernetes.io/hostname: {{ monitoring_master_node_name }}
+  tolerations:
+    - key: node-role.kubernetes.io/control-plane
+      operator: Exists
+      effect: NoSchedule
+  persistence:
+    enabled: true
+    type: pvc
+    storageClassName: {{ monitoring_storage_class }}
+    accessModes: ["ReadWriteOnce"]
+    size: 5Gi
+
+# ----- Prometheus sur master uniquement -----
+prometheus:
+  service:
+    type: NodePort
+    nodePort: {{ prometheus_nodeport }}
+  prometheusSpec:
+    retention: {{ monitoring_prometheus_retention }}
+    nodeSelector:
+      kubernetes.io/hostname: {{ monitoring_master_node_name }}
+    tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: {{ monitoring_storage_class }}
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: {{ monitoring_prometheus_pvc_size }}
+
+# ----- Alertmanager sur master uniquement -----
+alertmanager:
+  alertmanagerSpec:
+    nodeSelector:
+      kubernetes.io/hostname: {{ monitoring_master_node_name }}
+    tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+    storage:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: {{ monitoring_storage_class }}
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 2Gi
+
+# ----- prometheus-operator sur master uniquement -----
+prometheusOperator:
+  nodeSelector:
+    kubernetes.io/hostname: {{ monitoring_master_node_name }}
+  tolerations:
+    - key: node-role.kubernetes.io/control-plane
+      operator: Exists
+      effect: NoSchedule
+  admissionWebhooks:
+    patch:
+      nodeSelector:
+        kubernetes.io/hostname: {{ monitoring_master_node_name }}
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+
+# ----- kube-state-metrics sur master uniquement -----
+kube-state-metrics:
+  nodeSelector:
+    kubernetes.io/hostname: {{ monitoring_master_node_name }}
+  tolerations:
+    - key: node-role.kubernetes.io/control-plane
+      operator: Exists
+      effect: NoSchedule
+
+# ----- node-exporter sur workers uniquement -----
+prometheus-node-exporter:
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
+  tolerations: []

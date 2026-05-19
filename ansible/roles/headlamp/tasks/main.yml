@@ -32,14 +32,13 @@
   command: helm repo update
   changed_when: false
 
-- name: "[HEADLAMP] Résoudre le nom de node Kubernetes pour {{ headlamp_target_worker | default('worker1') }}"
+- name: "[HEADLAMP] Résoudre le nom de node Kubernetes du worker1 (IP interne {{ worker1_internal_ip }})"
   shell: |
     set -euo pipefail
-    target_ip="{{ hostvars[headlamp_target_worker | default('worker1')].ansible_host }}"
     KUBECONFIG="{{ k8s_master_config }}" kubectl get nodes \
       -o 'custom-columns=NAME:.metadata.name,IP:.status.addresses[?(@.type=="InternalIP")].address' \
       --no-headers \
-      | awk -v ip="$target_ip" '$2 == ip { print $1; found=1 } END { exit(found?0:1) }'
+      | awk -v ip="{{ worker1_internal_ip }}" '$2 == ip { print $1; found=1 } END { exit(found?0:1) }'
   args:
     executable: /bin/bash
   register: headlamp_target_node_name
@@ -47,7 +46,7 @@
 
 - name: "[HEADLAMP] Vérifier qu'on a trouvé le node Kubernetes cible"
   fail:
-    msg: "Impossible de trouver le node Kubernetes correspondant à {{ headlamp_target_worker | default('worker1') }} (ip={{ hostvars[headlamp_target_worker | default('worker1')].ansible_host }})"
+    msg: "Impossible de trouver le node Kubernetes correspondant à worker1 (ip={{ worker1_internal_ip }})"
   when: headlamp_target_node_name.stdout | trim == ""
 
 - name: "[HEADLAMP] Installer / mettre à jour Headlamp via Helm"
@@ -95,25 +94,22 @@
   changed_when: false
 
 - name: "[HEADLAMP] Résumé — où est le Pod et comment ouvrir l'UI (NodePort 30080)"
-  vars:
-    master_public: "{{ hostvars[groups['k8s_master'][0]]['ansible_host'] }}"
-    worker_inv: "{{ hostvars[headlamp_target_worker | default('worker1')]['ansible_host'] }}"
   debug:
     msg: |-
       {{ headlamp_cluster_status.stdout }}
 
       --- Accès navigateur depuis ton PC ---
-      Ton inventaire utilise des IP privées pour les workers (ex. worker1 = {{ worker_inv }}).
-      Depuis Internet, http://{{ worker_inv }}:30080 ne marchera pas (réseau VPC interne).
+      Ton inventaire utilise des IP privées pour les workers (ex. worker1 = {{ worker1_internal_ip }}).
+      Depuis Internet, http://{{ worker1_internal_ip }}:30080 ne marchera pas (réseau VPC interne).
 
       Option A — tunnel SSH via le master (recommandé) :
-        ssh -i ~/.ssh/kubequest.pem -N -L 30080:127.0.0.1:30080 ec2-user@{{ master_public }}
+        ssh -i ~/.ssh/kubequest.pem -N -L 30080:127.0.0.1:30080 ec2-user@{{ master_public_ip }}
         Puis ouvre : http://localhost:30080
 
       Option B — sans tunnel : ouvre le port TCP 30080 (inbound) sur le security group de l'EC2
         dont tu utilises l'IP publique (master ou n'importe quel worker), puis :
-        http://<IP_publique_EC2>:30080
-        (NodePort est publié sur chaque nœud ; le Pod Headlamp est schedulé sur {{ headlamp_target_worker | default('worker1') }}.)
+        http://{{ master_public_ip }}:30080
+        (NodePort est publié sur chaque nœud ; le Pod Headlamp est schedulé sur worker1.)
 
       Authentification : générer un token à la demande sur le master (voir docs/headlamp.md), sans le faire apparaître dans les logs ou CI.
 

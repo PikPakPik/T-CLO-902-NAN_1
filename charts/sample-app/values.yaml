@@ -19,6 +19,7 @@ service:
 
 autoscaling:
   enabled: false
+
 serviceAccount:
   create: true
 

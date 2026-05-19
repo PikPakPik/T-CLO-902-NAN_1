@@ -8,3 +8,33 @@ calico_manifest_url: "https://raw.githubusercontent.com/projectcalico/calico/{{ 
 
 containerd_config_dir: "/etc/containerd"
 containerd_config_file: "config.toml"
+
+headlamp_kustomize_src: "{{ playbook_dir }}/../infra/headlamp"
+
+monitoring_namespace: monitoring
+monitoring_release_name: kube-prometheus
+monitoring_chart_repo_name: prometheus-community
+monitoring_chart_repo_url: https://prometheus-community.github.io/helm-charts
+monitoring_chart_name: prometheus-community/kube-prometheus-stack
+monitoring_chart_version: "85.0.3"
+
+# Mot de passe admin Grafana. À surcharger via --extra-vars en production.
+grafana_admin_password: admin
+
+# StorageClass utilisée par le PVC Prometheus. Doit exister avant l'install.
+monitoring_storage_class: local-path
+monitoring_prometheus_pvc_size: 20Gi
+monitoring_prometheus_retention: 15d
+
+# NodePorts exposés sur chaque nœud (accessibles via l'IP publique du master).
+grafana_nodeport: 30030
+prometheus_nodeport: 30090
+
+master_public_ip: "{{ hostvars[groups['k8s_master'][0]].ansible_host }}"
+master_internal_ip: "{{ hostvars[groups['k8s_master'][0]].internal_ip }}"
+worker1_internal_ip: "{{ hostvars[groups['k8s_workers'][0]].ansible_host }}"
+worker2_internal_ip: "{{ hostvars[groups['k8s_workers'][1]].ansible_host }}"
+worker3_internal_ip: "{{ hostvars[groups['k8s_workers'][2]].ansible_host }}"
+
+# local-path-provisioner (Rancher) — installé si la StorageClass n'existe pas.
+local_path_provisioner_manifest_url: "https://raw.githubusercontent.com/rancher/local-path-provisioner/v0.0.36/deploy/local-path-storage.yaml"
