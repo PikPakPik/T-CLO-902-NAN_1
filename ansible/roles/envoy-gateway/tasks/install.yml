@@ -1,0 +1,30 @@
+---
+- name: "[ENVOY] Installer les CRDs Gateway API"
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k8s_master_config }}"
+    src: "{{ gateway_api_crds_url }}"
+    state: present
+
+- name: "[ENVOY] Installer / mettre à jour Envoy Gateway (Helm)"
+  kubernetes.core.helm:
+    kubeconfig: "{{ k8s_master_config }}"
+    name: "{{ envoy_gateway_helm_release }}"
+    chart_ref: "{{ envoy_gateway_chart_ref }}"
+    release_namespace: "{{ gateway_namespace }}"
+    create_namespace: yes
+    chart_version: "{{ envoy_gateway_chart_version }}"
+    skip_crds: yes
+
+- name: "[ENVOY] Copier les manifests Gateway sur le master"
+  ansible.builtin.copy:
+    src: "{{ gateway_kustomize_src }}/"
+    dest: /tmp/kubequest/infra/gateway/
+    mode: "0644"
+    directory_mode: "0755"
+
+- name: "[ENVOY] Appliquer le Gateway public (Kustomize)"
+  ansible.builtin.shell: |
+    set -euo pipefail
+    KUBECONFIG="{{ k8s_master_config }}" kubectl apply -k /tmp/kubequest/infra/gateway/
+  args:
+    executable: /bin/bash

@@ -1,0 +1,31 @@
+---
+# Déploiement complet : connectivité → cluster (+ pip kubernetes/helm sur le master)
+# → Gateway/Envoy → monitoring → Headlamp
+#
+#   ansible-playbook deploy_all.yml
+#
+# Tags : connectivity | cluster | gateway | monitoring | headlamp
+
+- name: Vérifier la connectivité SSH
+  ansible.builtin.import_playbook: test_connectivity.yml
+  tags: [connectivity]
+
+- name: Installer le cluster Kubernetes
+  ansible.builtin.import_playbook: setup_cluster_playbook.yml
+  tags: [cluster]
+
+- name: Installer Gateway API et Envoy Gateway
+  ansible.builtin.import_playbook: install_gateway-api.yml
+  tags: [gateway, gateway-install]
+
+- name: Exposer le Gateway (nginx sur le master)
+  ansible.builtin.import_playbook: deploy_gateway.yml
+  tags: [gateway, gateway-deploy]
+
+- name: Déployer la stack monitoring
+  ansible.builtin.import_playbook: deploy_monitoring.yml
+  tags: [monitoring]
+
+- name: Déployer Headlamp
+  ansible.builtin.import_playbook: deploy_headlamp.yml
+  tags: [headlamp]

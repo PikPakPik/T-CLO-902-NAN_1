@@ -1,0 +1,7 @@
+---
+headlamp_kustomize_src: "{{ playbook_dir }}/../infra/headlamp"
+
+headlamp_release_name: headlamp
+headlamp_namespace: headlamp
+headlamp_chart_ref: headlamp
+headlamp_chart_repo_url: https://kubernetes-sigs.github.io/headlamp/

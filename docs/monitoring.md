@@ -6,19 +6,20 @@ La stack de monitoring est déployée via un seul chart Helm (`kube-prometheus-s
 
 ```mermaid
 flowchart LR
-    user[🌐 Utilisateur\nnavigateur] -->|HTTP :30030| grafanaSvc
-    user -->|HTTP :30090| promSvc
+    user[🌐 Utilisateur\nnavigateur] -->|/grafana/ /prometheus/| gw
+    gw[Gateway public-gateway] --> grafanaRoute[HTTPRoute grafana]
+    gw --> promRoute[HTTPRoute prometheus]
 
     subgraph master[node: master]
-        grafanaSvc[Service NodePort\ngrafana :30030]
-        promSvc[Service NodePort\nprometheus :30090]
+        grafanaSvc[Service ClusterIP\ngrafana :80]
+        promSvc[Service ClusterIP\nprometheus :9090]
         grafana[Grafana Pod]
         prom[Prometheus Pod]
         alert[Alertmanager Pod]
         operator[prometheus-operator]
         ksm[kube-state-metrics]
-        grafanaSvc --> grafana
-        promSvc --> prom
+        grafanaRoute --> grafanaSvc --> grafana
+        promRoute --> promSvc --> prom
     end
 
     subgraph workers[nodes: workers]
@@ -63,6 +64,13 @@ Le playbook effectue les étapes suivantes :
 2. Installe **local-path-provisioner** si la StorageClass `local-path` n'existe pas, et la marque comme StorageClass par défaut.
 3. Ajoute le repo Helm `prometheus-community` puis met à jour les repos.
 4. Génère le fichier `values.yaml` à partir du template et installe le chart `kube-prometheus-stack`.
+5. Applique les HTTPRoutes (`infra/monitoring/`) vers le Gateway public.
+
+Déploiement complet (cluster + gateway + monitoring + headlamp) :
+
+```bash
+ansible-playbook deploy_all.yml
+```
 
 > Note : la StorageClass `local-path` est nécessaire pour fournir des PersistentVolumes à Prometheus (rétention de 15 jours, 20 Gi), Grafana (5 Gi) et Alertmanager (2 Gi).
 
@@ -76,10 +84,17 @@ Le playbook effectue les étapes suivantes :
 | `monitoring_prometheus_pvc_size`  | `20Gi`                    | Taille du volume Prometheus                      |
 | `monitoring_prometheus_retention` | `15d`                     | Durée de rétention des métriques Prometheus      |
 | `grafana_admin_password`          | `admin`                   | Mot de passe admin Grafana (à surcharger)        |
-| `grafana_nodeport`                | `30030`                   | NodePort exposant Grafana                        |
-| `prometheus_nodeport`             | `30090`                   | NodePort exposant Prometheus                     |
 
 > ⚠️ **Important** : Surcharger `grafana_admin_password` en production via `--extra-vars` ou un vault Ansible. Ne pas laisser la valeur par défaut.
+
+## Accès via Gateway (après `deploy_gateway.yml`)
+
+| Service    | URL (depuis Internet)              |
+| ---------- | ---------------------------------- |
+| Grafana    | `http://<IP_master>/grafana/`      |
+| Prometheus | `http://<IP_master>/prometheus/`   |
+
+Prérequis : port **TCP 80** ouvert sur le security group du master.
 
 ## Authentification Grafana
 

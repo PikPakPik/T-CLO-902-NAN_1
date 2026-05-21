@@ -1,0 +1,11 @@
+---
+gateway_kustomize_src: "{{ playbook_dir }}/../infra/gateway"
+
+gateway_name: public-gateway
+gateway_namespace: envoy-gateway-system
+
+# gateway_api_crds_url : défini dans group_vars/all.yml
+
+envoy_gateway_helm_release: envoy-gateway
+envoy_gateway_chart_ref: oci://docker.io/envoyproxy/gateway-helm
+envoy_gateway_chart_version: v1.8.0

@@ -1,4 +1,7 @@
 ---
+# Prérequis pour l'accès HTTP /grafana/ et /prometheus/ : install_gateway-api.yml + deploy_gateway.yml
+# (le rôle installe les CRDs Gateway API si elles manquent, mais pas Envoy ni le Gateway public)
+
 - name: "Déployer la stack monitoring (Prometheus + Grafana + node-exporter)"
   hosts: k8s_master
   gather_facts: yes

@@ -1,117 +1,187 @@
 ---
-- name: "[MONITORING] Vérifier que kubectl est disponible"
-  command: kubectl version --client=true
+- name: "[MONITORING] Récupérer le nom du noeud control-plane"
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ k8s_master_config }}"
+    api_version: v1
+    kind: Node
+    label_selectors:
+      - node-role.kubernetes.io/control-plane
+  register: monitoring_control_plane_nodes
   changed_when: false
 
-- name: "[MONITORING] Vérifier que Helm est disponible"
-  command: helm version
-  register: helm_version
+- name: "[MONITORING] Définir monitoring_master_node_name"
+  ansible.builtin.set_fact:
+    monitoring_master_node_name: "{{ monitoring_control_plane_nodes.resources[0].metadata.name }}"
+
+- name: "[MONITORING] Vérifier si la StorageClass {{ monitoring_storage_class }} existe"
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ k8s_master_config }}"
+    api_version: storage.k8s.io/v1
+    kind: StorageClass
+    name: "{{ monitoring_storage_class }}"
+  register: monitoring_storageclass_info
   failed_when: false
-  changed_when: false
 
-- name: "[MONITORING] Installer Helm (si absent)"
-  when: helm_version.rc != 0
-  block:
-    - name: "[MONITORING] Télécharger le script d'installation Helm"
-      get_url:
-        url: "https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3"
-        dest: /tmp/get-helm-3
-        mode: "0755"
-
-    - name: "[MONITORING] Exécuter l'installation Helm"
-      command: /tmp/get-helm-3
-
-- name: "[MONITORING] Vérifier si la StorageClass {{ monitoring_storage_class }} existe déjà"
-  shell: |
-    KUBECONFIG="{{ k8s_master_config }}" kubectl get storageclass {{ monitoring_storage_class }} -o name
-  args:
-    executable: /bin/bash
-  register: storageclass_check
+- name: "[MONITORING] Vérifier l'état du Deployment local-path-provisioner"
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ k8s_master_config }}"
+    api_version: apps/v1
+    kind: Deployment
+    name: local-path-provisioner
+    namespace: local-path-storage
+  register: monitoring_local_path_deploy
   failed_when: false
-  changed_when: false
 
-- name: "[MONITORING] Installer local-path-provisioner (si StorageClass absente)"
-  when: storageclass_check.rc != 0
-  shell: |
-    set -euo pipefail
-    KUBECONFIG="{{ k8s_master_config }}" kubectl apply -f "{{ local_path_provisioner_manifest_url }}"
-  args:
-    executable: /bin/bash
+- name: "[MONITORING] Déterminer si local-path doit être installé ou réparé"
+  ansible.builtin.set_fact:
+    monitoring_need_local_path: >-
+      {{
+        (monitoring_storageclass_info.resources | default([]) | length == 0)
+        or (monitoring_local_path_deploy.resources | default([]) | length == 0)
+        or (
+          monitoring_local_path_deploy.resources | default([])
+          | json_query('[0].status.readyReplicas')
+          | default(0, true) | int < 1
+        )
+      }}
+
+- name: "[MONITORING] Appliquer le manifest local-path-provisioner"
+  when: monitoring_need_local_path | bool
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k8s_master_config }}"
+    src: "{{ local_path_provisioner_manifest_url }}"
+    state: present
+    wait: false
+
+- name: "[MONITORING] Scheduler local-path sur le master (PVC monitoring sur control-plane)"
+  when: monitoring_need_local_path | bool
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k8s_master_config }}"
+    api_version: apps/v1
+    kind: Deployment
+    name: local-path-provisioner
+    namespace: local-path-storage
+    merge_type: strategic-merge
+    definition:
+      spec:
+        template:
+          spec:
+            nodeSelector:
+              kubernetes.io/hostname: "{{ monitoring_master_node_name }}"
+            tolerations:
+              - key: node-role.kubernetes.io/control-plane
+                operator: Exists
+                effect: NoSchedule
 
 - name: "[MONITORING] Attendre que local-path-provisioner soit Ready"
-  when: storageclass_check.rc != 0
-  shell: |
+  when: monitoring_need_local_path | bool
+  ansible.builtin.shell: |
     set -euo pipefail
-    KUBECONFIG="{{ k8s_master_config }}" kubectl -n local-path-storage \
-      rollout status deploy/local-path-provisioner --timeout=180s
+    export KUBECONFIG="{{ k8s_master_config }}"
+    kubectl -n local-path-storage rollout status deploy/local-path-provisioner --timeout={{ local_path_provisioner_rollout_timeout }}
   args:
     executable: /bin/bash
 
 - name: "[MONITORING] Marquer {{ monitoring_storage_class }} comme StorageClass par défaut"
-  shell: |
-    set -euo pipefail
-    KUBECONFIG="{{ k8s_master_config }}" kubectl patch storageclass {{ monitoring_storage_class }} \
-      -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
-  args:
-    executable: /bin/bash
-  register: default_sc_patch
-  changed_when: "'patched' in default_sc_patch.stdout and 'no change' not in default_sc_patch.stdout"
-
-- name: "[MONITORING] Ajouter le repo Helm {{ monitoring_chart_repo_name }}"
-  command: helm repo add {{ monitoring_chart_repo_name }} {{ monitoring_chart_repo_url }}
-  register: helm_repo_add
-  failed_when: helm_repo_add.rc != 0 and ('already exists' not in (helm_repo_add.stderr | default('')))
-  changed_when: "'already exists' not in (helm_repo_add.stderr | default(''))"
-
-- name: "[MONITORING] Mettre à jour les repos Helm"
-  command: helm repo update
-  changed_when: false
-
-- name: "[MONITORING] Récupérer le nom du noeud control-plane"
-  shell: |
-    set -euo pipefail
-    KUBECONFIG="{{ k8s_master_config }}" kubectl get nodes \
-      -l node-role.kubernetes.io/control-plane \
-      -o jsonpath='{.items[0].metadata.name}'
-  args:
-    executable: /bin/bash
-  register: monitoring_master_node_query
-  changed_when: false
-
-- name: "[MONITORING] Définir monitoring_master_node_name"
-  set_fact:
-    monitoring_master_node_name: "{{ monitoring_master_node_query.stdout | trim }}"
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k8s_master_config }}"
+    api_version: storage.k8s.io/v1
+    kind: StorageClass
+    name: "{{ monitoring_storage_class }}"
+    merge_type: merge
+    definition:
+      metadata:
+        annotations:
+          storageclass.kubernetes.io/is-default-class: "true"
 
 - name: "[MONITORING] Créer le répertoire des values Helm sur le master"
-  file:
+  ansible.builtin.file:
     path: /tmp/kubequest/monitoring
     state: directory
     mode: "0755"
 
 - name: "[MONITORING] Générer les values Helm sur le master"
-  template:
+  ansible.builtin.template:
     src: values.yaml.j2
     dest: /tmp/kubequest/monitoring/values.yaml
     mode: "0644"
 
-- name: "[MONITORING] Installer / mettre à jour kube-prometheus-stack via Helm"
-  shell: |
+- name: "[MONITORING] Débloquer un release Helm coincé (pending-install/upgrade)"
+  ansible.builtin.shell: |
     set -euo pipefail
-    KUBECONFIG="{{ k8s_master_config }}" \
-      helm upgrade --install {{ monitoring_release_name }} {{ monitoring_chart_name }} \
-        --namespace {{ monitoring_namespace }} \
-        --create-namespace \
-        --version {{ monitoring_chart_version }} \
-        --values /tmp/kubequest/monitoring/values.yaml \
-        --wait --timeout 10m
+    export KUBECONFIG="{{ k8s_master_config }}"
+    status="$(helm status {{ monitoring_release_name }} -n {{ monitoring_namespace }} -o json 2>/dev/null \
+      | python3 -c "import sys,json; print(json.load(sys.stdin).get('info',{}).get('status',''))" 2>/dev/null || true)"
+    case "$status" in
+      pending-install|pending-upgrade|pending-rollback)
+        helm rollback {{ monitoring_release_name }} -n {{ monitoring_namespace }} 2>/dev/null \
+          || helm uninstall {{ monitoring_release_name }} -n {{ monitoring_namespace }} --wait
+        ;;
+    esac
   args:
     executable: /bin/bash
-
-- name: "[MONITORING] État des pods / services / PVC du namespace"
-  shell: |
-    set -euo pipefail
-    KUBECONFIG="{{ k8s_master_config }}" kubectl get pods,svc,pvc -n {{ monitoring_namespace }} -o wide
-  args:
-    executable: /bin/bash
-  register: monitoring_status
   changed_when: false
+  failed_when: false
+
+- name: "[MONITORING] Ajouter le repo Helm {{ monitoring_chart_repo_name }}"
+  ansible.builtin.command:
+    argv:
+      - helm
+      - repo
+      - add
+      - "{{ monitoring_chart_repo_name }}"
+      - "{{ monitoring_chart_repo_url }}"
+  register: monitoring_helm_repo_add
+  failed_when: >-
+    monitoring_helm_repo_add.rc != 0
+    and ('already exists' not in (monitoring_helm_repo_add.stderr | default('')))
+  changed_when: "'already exists' not in (monitoring_helm_repo_add.stderr | default(''))"
+
+- name: "[MONITORING] Mettre à jour le cache des repos Helm"
+  ansible.builtin.command: helm repo update
+  changed_when: false
+
+- name: "[MONITORING] Installer / mettre à jour kube-prometheus-stack via Helm"
+  kubernetes.core.helm:
+    kubeconfig: "{{ k8s_master_config }}"
+    name: "{{ monitoring_release_name }}"
+    chart_ref: kube-prometheus-stack
+    chart_repo_url: "{{ monitoring_chart_repo_url }}"
+    chart_version: "{{ monitoring_chart_version }}"
+    release_namespace: "{{ monitoring_namespace }}"
+    create_namespace: true
+    update_repo_cache: false
+    values_files:
+      - /tmp/kubequest/monitoring/values.yaml
+    wait: true
+    timeout: 10m
+
+- name: "[MONITORING] Copier les manifests Kustomize sur le master"
+  ansible.builtin.copy:
+    src: "{{ monitoring_kustomize_src }}/"
+    dest: /tmp/kubequest/infra/monitoring/
+    mode: "0644"
+    directory_mode: "0755"
+
+- name: "[MONITORING] Vérifier que les CRDs Gateway API (HTTPRoute) sont installées"
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ k8s_master_config }}"
+    api_version: apiextensions.k8s.io/v1
+    kind: CustomResourceDefinition
+    name: httproutes.gateway.networking.k8s.io
+  register: monitoring_httproute_crd
+  failed_when: false
+
+- name: "[MONITORING] Installer les CRDs Gateway API (prérequis HTTPRoute)"
+  when: monitoring_httproute_crd.resources | default([]) | length == 0
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k8s_master_config }}"
+    src: "{{ gateway_api_crds_url }}"
+    state: present
+
+- name: "[MONITORING] Appliquer les HTTPRoutes (Grafana + Prometheus)"
+  ansible.builtin.shell: |
+    set -euo pipefail
+    KUBECONFIG="{{ k8s_master_config }}" kubectl apply -k /tmp/kubequest/infra/monitoring/
+  args:
+    executable: /bin/bash

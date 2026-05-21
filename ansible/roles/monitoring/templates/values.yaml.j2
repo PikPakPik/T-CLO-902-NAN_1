@@ -1,11 +1,14 @@
 ---
-# ----- Grafana sur master uniquement -----
+# ----- Grafana sur master uniquement (exposé via HTTPRoute /grafana/) -----
 grafana:
   enabled: true
   adminPassword: "{{ grafana_admin_password }}"
+  grafana.ini:
+    server:
+      root_url: "%(protocol)s://%(domain)s:%(http_port)s/grafana/"
+      serve_from_sub_path: true
   service:
-    type: NodePort
-    nodePort: {{ grafana_nodeport }}
+    type: ClusterIP
   nodeSelector:
     kubernetes.io/hostname: {{ monitoring_master_node_name }}
   tolerations:
@@ -19,13 +22,13 @@ grafana:
     accessModes: ["ReadWriteOnce"]
     size: 5Gi
 
-# ----- Prometheus sur master uniquement -----
+# ----- Prometheus sur master uniquement (exposé via HTTPRoute /prometheus/) -----
 prometheus:
   service:
-    type: NodePort
-    nodePort: {{ prometheus_nodeport }}
+    type: ClusterIP
   prometheusSpec:
     retention: {{ monitoring_prometheus_retention }}
+    routePrefix: /prometheus
     nodeSelector:
       kubernetes.io/hostname: {{ monitoring_master_node_name }}
     tolerations:

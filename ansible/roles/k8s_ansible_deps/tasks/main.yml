@@ -1,0 +1,33 @@
+---
+# Prérequis des modules kubernetes.core (k8s, helm) sur les hôtes cibles.
+- name: "[K8S-DEPS] Installer python3-pip"
+  ansible.builtin.dnf:
+    name: python3-pip
+    state: present
+
+- name: "[K8S-DEPS] Installer les bibliothèques Python pour kubernetes.core"
+  ansible.builtin.pip:
+    name:
+      - "kubernetes>=28.0.0"
+      - "PyYAML"
+      - "jsonpatch"
+    state: present
+    executable: pip3
+
+- name: "[K8S-DEPS] Vérifier que Helm est disponible"
+  ansible.builtin.command: helm version
+  register: k8s_deps_helm_version
+  changed_when: false
+  failed_when: false
+
+- name: "[K8S-DEPS] Installer Helm (si absent)"
+  when: k8s_deps_helm_version.rc != 0
+  block:
+    - name: "[K8S-DEPS] Télécharger le script d'installation Helm"
+      ansible.builtin.get_url:
+        url: https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+        dest: /tmp/get-helm-3
+        mode: "0755"
+
+    - name: "[K8S-DEPS] Exécuter l'installation Helm"
+      ansible.builtin.command: /tmp/get-helm-3

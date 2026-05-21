@@ -95,3 +95,9 @@
     name: kubelet
     state: started
     enabled: yes
+
+# Prérequis des modules Ansible kubernetes.core (pip + client Python + helm) sur le master.
+- name: "[COMMON] Installer les dépendances kubernetes.core sur le control-plane"
+  when: inventory_hostname in groups['k8s_master']
+  ansible.builtin.import_role:
+    name: k8s_ansible_deps
