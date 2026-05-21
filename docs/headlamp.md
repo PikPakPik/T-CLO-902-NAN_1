@@ -6,10 +6,11 @@ Headlamp est une interface web open-source pour Kubernetes. Elle permet de visua
 
 ```mermaid
 flowchart LR
-    user[🌐 Utilisateur\nnavigateur] -->|HTTP :30080| svc
+    user[🌐 Utilisateur\nnavigateur] -->|/headlamp/| gw
+    gw[Gateway public-gateway] --> route[HTTPRoute headlamp]
 
     subgraph ns[namespace: headlamp]
-        svc[Service NodePort\nheadlamp-nodeport\n:30080 → :4466]
+        route --> svc[Service ClusterIP\nheadlamp :80]
         pod[Headlamp Pod\n:4466]
         sa[ServiceAccount\nheadlamp-admin]
         svc --> pod
@@ -53,29 +54,21 @@ ansible-playbook -i inventory.yml deploy_headlamp.yml
 
 Le playbook force le **Pod** Headlamp sur **worker1** : un `nodeSelector` cible le nœud Kubernetes dont l’adresse interne correspond à `worker1` dans `inventory.yml` (IP privée du VPC).
 
-## Accès à l’interface sur EC2
+## Accès via Gateway (recommandé)
 
-Headlamp est exposé en **NodePort `30080`** (Service `headlamp-nodeport`). Le Pod peut être sur **worker1 uniquement**, mais le port **30080 écoute sur chaque nœud** du cluster (comportement NodePort).
+Prérequis : `install_gateway-api.yml` + `deploy_gateway.yml` (comme pour Grafana).
 
-Dans ce dépôt, **`ansible_host` des workers est une IP privée** (ex. `10.0.3.198`). **Depuis ton PC sur Internet**, `http://10.0.3.198:30080` ne fonctionne en principe **pas** : cette IP n’est pas routable hors du VPC.
+| Service  | URL (depuis Internet)           |
+| -------- | ------------------------------- |
+| Headlamp | `http://<IP_master>/headlamp/` |
 
-**Deux approches possibles :**
-
-1. **Tunnel SSH via le master** (souvent le plus simple) :
-   ```bash
-   ssh -i ~/.ssh/kubequest.pem -N -L 30080:127.0.0.1:30080 ec2-user@IP_PUBLIQUE_DU_MASTER
-   ```
-   Puis ouvre **http://localhost:30080** dans le navigateur.
-
-2. **Security group AWS** : ouvrir **TCP 30080** en entrée vers l’**IP publique** de l’instance que tu cibles (master ou worker), puis `http://IP_PUBLIQUE:30080`.
+Le chart Helm est configuré avec `baseURL: /headlamp`. Le port **TCP 80** du master doit être ouvert dans le security group AWS.
 
 Vérification sur le master :
 
 ```bash
-KUBECONFIG=/etc/kubernetes/admin.conf kubectl get pods,svc,endpoints -n headlamp -o wide
+sudo KUBECONFIG=/etc/kubernetes/admin.conf kubectl get httproute,pods,svc,endpoints -n headlamp
 ```
-
-Si le Pod est `Running` et que les **endpoints** du service `headlamp-nodeport` ne sont pas vides, Kubernetes est correct ; en cas de page inaccessible, le problème est **réseau (URL, SG, tunnel)**, pas le chart.
 
 ## RBAC
 

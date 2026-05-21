@@ -61,6 +61,6 @@ spec:
             type: PathPrefix
             value: /prometheus/
       backendRefs:
-        - name: kube-prometheus-kube-prometheus-prometheus
+        - name: kube-prometheus-kube-prome-prometheus
           port: 9090
           weight: 100
