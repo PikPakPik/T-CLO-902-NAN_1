@@ -1,39 +1,55 @@
 ---
-- name: "[SEALED-SECRETS] Vérifier si le contrôleur est déjà déployé"
-  shell: |
-    KUBECONFIG={{ k8s_master_config }} kubectl get deployment -n {{ sealed_secrets_controller_namespace }} \
-      -l app.kubernetes.io/name=sealed-secrets -o name 2>/dev/null
-  register: sealed_secrets_check
+- name: "[SEALED-SECRETS] Ajouter le repo Helm {{ sealed_secrets_chart_repo_name }}"
+  ansible.builtin.command:
+    argv:
+      - helm
+      - repo
+      - add
+      - "{{ sealed_secrets_chart_repo_name }}"
+      - "{{ sealed_secrets_chart_repo_url }}"
+  register: sealed_secrets_helm_repo_add
+  failed_when: >-
+    sealed_secrets_helm_repo_add.rc != 0
+    and ('already exists' not in (sealed_secrets_helm_repo_add.stderr | default('')))
+  changed_when: "'already exists' not in (sealed_secrets_helm_repo_add.stderr | default(''))"
+
+- name: "[SEALED-SECRETS] Mettre à jour le cache des repos Helm"
+  ansible.builtin.command: helm repo update
   changed_when: false
-  failed_when: false
 
-- name: "[SEALED-SECRETS] Déployer le contrôleur dans le cluster"
-  shell: |
-    KUBECONFIG={{ k8s_master_config }} kubectl apply -f {{ sealed_secrets_controller_manifest_url }}
-  when: sealed_secrets_check.rc != 0
+- name: "[SEALED-SECRETS] Installer / mettre à jour le contrôleur via Helm"
+  kubernetes.core.helm:
+    kubeconfig: "{{ k8s_master_config }}"
+    name: "{{ sealed_secrets_release_name }}"
+    chart_ref: "{{ sealed_secrets_chart_ref }}"
+    chart_repo_url: "{{ sealed_secrets_chart_repo_url }}"
+    chart_version: "{{ sealed_secrets_chart_version }}"
+    release_namespace: "{{ sealed_secrets_controller_namespace }}"
+    create_namespace: false
+    update_repo_cache: false
+    wait: true
+    timeout: 3m
+    values:
+      fullnameOverride: sealed-secrets-controller
 
-- name: "[SEALED-SECRETS] Attendre que le déploiement soit prêt"
-  shell: |
-    set -euo pipefail
-    DEPLOYMENT_NAME="$(KUBECONFIG={{ k8s_master_config }} kubectl get deployment \
-      -n {{ sealed_secrets_controller_namespace }} \
-      -l app.kubernetes.io/name=sealed-secrets \
-      -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
-    if [ -z "${DEPLOYMENT_NAME}" ]; then
-      DEPLOYMENT_NAME="sealed-secrets-controller"
-    fi
-    KUBECONFIG={{ k8s_master_config }} kubectl rollout status "deployment/${DEPLOYMENT_NAME}" \
-      -n {{ sealed_secrets_controller_namespace }} --timeout=180s
+- name: "[SEALED-SECRETS] Vérifier que le déploiement est disponible"
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ k8s_master_config }}"
+    api_version: apps/v1
+    kind: Deployment
+    namespace: "{{ sealed_secrets_controller_namespace }}"
+    label_selectors:
+      - app.kubernetes.io/name=sealed-secrets
+  register: sealed_secrets_deployments
   changed_when: false
 
 - name: "[SEALED-SECRETS] Afficher l'état du contrôleur"
-  shell: |
-    KUBECONFIG={{ k8s_master_config }} kubectl get pods \
-      -n {{ sealed_secrets_controller_namespace }} \
-      -l app.kubernetes.io/name=sealed-secrets -o wide
-  register: sealed_secrets_status
-  changed_when: false
-
-- name: "[SEALED-SECRETS] Sortie de contrôle"
-  debug:
-    var: sealed_secrets_status.stdout_lines
+  ansible.builtin.debug:
+    msg: >-
+      {{
+        sealed_secrets_deployments.resources
+        | map(attribute='metadata.name')
+        | list
+        | join(', ')
+      }}
+  when: sealed_secrets_deployments.resources | length > 0
