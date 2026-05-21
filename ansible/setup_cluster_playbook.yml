@@ -12,11 +12,10 @@
   hosts: k8s_master
   gather_facts: yes
   become: yes
-  tags: master
+  tags: [master, cluster]
 
   roles:
     - k8s_master
-    - sealed_secrets
 
 - name: "Installation de Kubernetes Worker"
   hosts: k8s_workers

@@ -9,7 +9,12 @@ Le playbook Ansible installe automatiquement le contrôleur sur le master via He
 Depuis `ansible/` :
 
 ```bash
-ansible-playbook -i inventory.yml setup_cluster_playbook.yml --tags master
+# Seul le contrôleur (cluster déjà prêt)
+ansible-playbook -i inventory.yml deploy_sealed_secrets.yml
+
+# Ou tout le stack
+ansible-playbook -i inventory.yml deploy_all.yml
+# ansible-playbook -i inventory.yml deploy_all.yml --tags sealed-secrets
 ```
 
 Vérification :

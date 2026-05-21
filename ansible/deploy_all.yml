@@ -1,10 +1,10 @@
 ---
-# Déploiement complet : connectivité → cluster (+ pip kubernetes/helm sur le master)
-# → Gateway/Envoy → monitoring → Headlamp
+# Déploiement complet :
+#   connectivité → cluster → sealed-secrets → Gateway/Envoy → monitoring → Headlamp
 #
 #   ansible-playbook deploy_all.yml
 #
-# Tags : connectivity | cluster | gateway | monitoring | headlamp
+# Tags : connectivity | cluster | sealed-secrets | gateway | monitoring | headlamp
 
 - name: Vérifier la connectivité SSH
   ansible.builtin.import_playbook: test_connectivity.yml
@@ -13,6 +13,10 @@
 - name: Installer le cluster Kubernetes
   ansible.builtin.import_playbook: setup_cluster_playbook.yml
   tags: [cluster]
+
+- name: Déployer Sealed Secrets
+  ansible.builtin.import_playbook: deploy_sealed_secrets.yml
+  tags: [sealed-secrets]
 
 - name: Installer Gateway API et Envoy Gateway
   ansible.builtin.import_playbook: install_gateway-api.yml
