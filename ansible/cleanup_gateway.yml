@@ -1,0 +1,77 @@
+---
+# Playbook : Reset complet des ressources Gateway API + Envoy Gateway
+#
+# À lancer avant un redéploiement "from scratch" pour repartir d'un état propre.
+# Ordre de suppression : HTTPRoutes → Gateway → GatewayClass → EnvoyProxy → Helm release → Namespace.
+# Toutes les tâches sont idempotentes (ignore_errors) : on peut le rejouer sans risque.
+
+- name: Cleanup Envoy Gateway + Gateway API resources
+  hosts: k8s_master
+  become: yes
+  tasks:
+    - name: 'Delete HTTPRoute headlamp (si existe)'
+      kubernetes.core.k8s:
+        kubeconfig: '{{ k8s_master_config }}'
+        state: absent
+        api_version: gateway.networking.k8s.io/v1
+        kind: HTTPRoute
+        namespace: headlamp
+        name: headlamp
+      ignore_errors: yes
+
+    - name: 'Delete Gateway public-gateway'
+      kubernetes.core.k8s:
+        kubeconfig: '{{ k8s_master_config }}'
+        state: absent
+        api_version: gateway.networking.k8s.io/v1
+        kind: Gateway
+        namespace: envoy-gateway-system
+        name: public-gateway
+      ignore_errors: yes
+
+    - name: 'Delete GatewayClass envoy-gateway'
+      kubernetes.core.k8s:
+        kubeconfig: '{{ k8s_master_config }}'
+        state: absent
+        api_version: gateway.networking.k8s.io/v1
+        kind: GatewayClass
+        name: envoy-gateway
+      ignore_errors: yes
+
+    - name: 'Delete EnvoyProxy config'
+      kubernetes.core.k8s:
+        kubeconfig: '{{ k8s_master_config }}'
+        state: absent
+        api_version: gateway.envoyproxy.io/v1alpha1
+        kind: EnvoyProxy
+        namespace: envoy-gateway-system
+        name: envoy-nodeport
+      ignore_errors: yes
+
+    - name: 'Helm uninstall envoy-gateway'
+      kubernetes.core.helm:
+        kubeconfig: '{{ k8s_master_config }}'
+        name: envoy-gateway
+        release_namespace: envoy-gateway-system
+        state: absent
+      ignore_errors: yes
+
+    - name: 'Delete namespace envoy-gateway-system'
+      kubernetes.core.k8s:
+        kubeconfig: '{{ k8s_master_config }}'
+        state: absent
+        api_version: v1
+        kind: Namespace
+        name: envoy-gateway-system
+      ignore_errors: yes
+
+    - name: 'Status après cleanup'
+      shell: |
+        export KUBECONFIG={{ k8s_master_config }}
+        echo "=== GatewayClass (devrait être vide) ==="
+        kubectl get gatewayclass 2>/dev/null || true
+        echo "=== Namespace envoy-gateway-system (devrait être absent) ==="
+        kubectl get ns envoy-gateway-system 2>/dev/null || echo "absent (OK)"
+      args:
+        executable: /bin/bash
+      changed_when: false

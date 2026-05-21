@@ -1,788 +1,201 @@
-# Architecture Gateway API & Envoy Gateway
+# Architecture Gateway API avec Envoy Gateway (mode hostNetwork)
 
-Ce document explique où et comment organiser les fichiers Gateway API dans ton projet, avec la logique de séparation entre infrastructure (ops) et applications (devs).
+## Vue d'ensemble
 
----
+Gateway API est le standard Kubernetes pour le routage de trafic (successeur d'Ingress). Envoy Gateway est l'implémentation de référence, basée sur Envoy Proxy.
 
-## Principe fondamental : Séparation des responsabilités
+### Composants
+
+- **GatewayClass** : Définit le contrôleur qui gère les Gateways (ici `gateway.envoyproxy.io/gatewayclass-controller`)
+- **Gateway** : Point d'entrée réseau (listener sur un port, ex: HTTP:80)
+- **HTTPRoute** : Règles de routage (hostname, path, headers) vers des services
+- **EnvoyProxy** : Configuration du dataplane Envoy (hostNetwork, nodeSelector, etc.)
+
+## Architecture actuelle
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    INFRASTRUCTURE (Ops)                      │
-│  Namespace: envoy-gateway-system                             │
-│  ├── GatewayClass (auto-créé par Helm)                      │
-│  └── Gateway public-gateway (1 seul par cluster)            │
-│       └── Port 80, 443, TLS, Rate Limiting global...        │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                         Internet                                │
+│                  EIP 15.237.15.14:80                            │
+└─────────────────────────────────────────────────────────────────┘
                               │
-                              │ parentRefs
                               ▼
-┌─────────────────────────────────────────────────────────────┐
-│                    APPLICATIONS (Devs)                       │
-│  Namespace: default (ou staging, prod...)                    │
-│  ├── HTTPRoute mon-app (routage vers les pods)              │
-│  └── Service mon-app (cible du backendRefs)                 │
-│                                                             │
-│  Namespace: api                                              │
-│  ├── HTTPRoute api-service                                  │
-│  └── Service api-service                                    │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                    Master Node (hostNetwork)                    │
+│  ┌──────────────┐                                               │
+│  │   Envoy      │  Pod avec hostNetwork=true                    │
+│  │   Proxy      │  Écoute directement sur master:80             │
+│  │  (dataplane) │                                               │
+│  └──────────────┘                                               │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              │ Match HTTPRoute (hostname/path)
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                  Service ClusterIP                              │
+│  ┌──────────────┐                                               │
+│  │  Service     │                                               │
+│  │  Headlamp    │                                               │
+│  └──────────────┘                                               │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                      Pod Headlamp                               │
+│  ┌──────────────┐                                               │
+│  │   Headlamp   │                                               │
+│  │   Dashboard  │                                               │
+│  └──────────────┘                                               │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
----
+### Pourquoi hostNetwork ?
 
-## Arborescence recommandée dans ton projet
+- **Workers = IP privées uniquement** (10.0.3.x) → non joignables depuis Internet
+- **Master = EIP publique** (15.237.15.14) avec port 80 ouvert dans le SG
+- **Pas de cloud-controller AWS** → LoadBalancer impossible
+- **Pas de ressource AWS à créer** (NLB, TG, etc.)
 
-```
-T-CLO-902-NAN_1/
-├── ansible/
-│   └── install_gateway-api.yml          # ← Installation du contrôleur
-│
-├── infra/
-│   └── gateway/                         # ← Infrastructure réseau (ops)
-│       ├── gateway-public.yaml          # Gateway principale (1 seul)
-│       ├── gateway-internal.yaml        # (optionnel) Gateway interne
-│       └── kustomization.yaml
-│
-├── charts/sample-app/templates/         # ← Applications (devs)
-│   ├── httproute.yaml                   # HTTPRoute de l'app
-│   ├── service.yaml                     # Service cible
-│   └── deployment.yaml                  # Pods
-│
-└── docs/
-    └── gateway-api-architecture.md      # ← Ce fichier
-```
+⚠️ **Note** : hostNetwork sur le control-plane est un anti-pattern en prod, mais acceptable pour un cluster dev/test sans ressource AWS.
 
----
+## Séparation des responsabilités
 
-## Détails des composants
+| Composant                | Rôle                                              | Qui le crée                       |
+| ------------------------ | ------------------------------------------------- | --------------------------------- |
+| Envoy Gateway Controller | Gère les CRDs Gateway API, déploie les pods Envoy | Helm (`install_gateway-api.yml`)  |
+| GatewayClass             | Lie le contrôleur à une config EnvoyProxy         | Ansible (`deploy_gateway.yml`)    |
+| EnvoyProxy               | Configure hostNetwork et pin sur master           | Ansible (`deploy_gateway.yml`)    |
+| Gateway                  | Définit un point d'entrée HTTP:80                 | Ansible (`deploy_gateway.yml`)    |
+| HTTPRoute                | Définit les règles de routage pour une app        | Kustomize (par app, ex: Headlamp) |
 
-### 1. Gateway (Infrastructure) — 1 seul fichier par cluster
-
-**Emplacement :** `infra/gateway/gateway-public.yaml`
+## EnvoyProxy CRD (hostNetwork)
 
 ```yaml
-apiVersion: gateway.networking.k8s.io/v1
-kind: Gateway
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: EnvoyProxy
 metadata:
-  name: public-gateway
-  namespace: envoy-gateway-system
-  annotations:
-    # Optionnel : spécifier le type de LoadBalancer AWS
-    service.beta.kubernetes.io/aws-load-balancer-type: nlb
-spec:
-  gatewayClassName: envoy-gateway
-  listeners:
-    # HTTP standard
-    - name: http
-      protocol: HTTP
-      port: 80
-      allowedRoutes:
-        namespaces:
-          from: All # Permet aux routes de tous les namespaces de s'y brancher
-
-    # HTTPS avec TLS
-    - name: https
-      protocol: HTTPS
-      port: 443
-      tls:
-        mode: Terminate
-        certificateRefs:
-          - name: wildcard-tls-secret # Secret contenant cert+key
-      allowedRoutes:
-        namespaces:
-          from: All
-```
-
-**Qui le gère :** L'équipe Ops/Infrastructure (toi avec Ansible ou manuellement)
-
-**Combien :** **UN SEUL** par cluster (ou un par zone si multi-AZ)
-
----
-
-### 1.1 Configuration TLS dans le Gateway
-
-#### `tls.mode: Terminate` — Déchiffrement TLS au Gateway
-
-Cette configuration signifie que **Envoy Gateway gère le HTTPS** :
-
-```
-Internet ──► [HTTPS:443] ──► [Gateway déchiffre TLS] ──► [HTTP vers pods]
-              ↑                                ↓
-         Certificat TLS                    Trafic en clair
-         (wildcard-tls-secret)               (HTTP) dans le cluster
-```
-
-**Pourquoi `Terminate` ?**
-
-- Le Gateway **termine** (déchiffre) la connexion TLS
-- Les pods reçoivent du **HTTP non-chiffré** (plus simple, pas besoin de cert dans chaque app)
-- Le Gateway fait office de **point unique de gestion TLS**
-
-**Alternative : `mode: Passthrough`**
-
-- Le Gateway ne touche pas au TLS
-- Le trafic chiffré passe directement aux pods (qui doivent gérer leurs propres certificats)
-- Utile pour du SNI routing ou des besoins spécifiques de chiffrement end-to-end
-
-#### `certificateRefs` — Référence à un Secret Kubernetes
-
-Le `certificateRefs` pointe vers un **Secret Kubernetes de type TLS** :
-
-```yaml
-certificateRefs:
-  - name: wildcard-tls-secret # ← Nom du Secret
-    namespace: envoy-gateway-system # ← Optionnel, défaut = namespace du Gateway
-```
-
-**Créer le Secret TLS :**
-
-```bash
-# Depuis des fichiers cert + key
-kubectl create secret tls wildcard-tls-secret \
-  --cert=path/to/tls.crt \
-  --key=path/to/tls.key \
-  -n envoy-gateway-system
-```
-
-**Ou en YAML :**
-
-```yaml
-apiVersion: v1
-kind: Secret
-metadata:
-  name: wildcard-tls-secret
-  namespace: envoy-gateway-system
-type: kubernetes.io/tls # ← Type obligatoire
-data:
-  tls.crt: <base64-encoded-certificate>
-  tls.key: <base64-encoded-private-key>
-```
-
-**Structure du Secret TLS :**
-
-| Clé       | Contenu                 |
-| --------- | ----------------------- |
-| `tls.crt` | Certificat public (PEM) |
-| `tls.key` | Clé privée (PEM)        |
-
-#### Flux de trafic avec TLS
-
-```
-Client ──► https://mon-app.example.com ──┐
-                                         │
-    [Résolution DNS → IP du LoadBalancer]  │
-                                         │
-    [Handshake TLS] ◄──── Certificat wildcard-tls-secret
-    (vérification *.example.com)         │
-                                         │
-    [HTTP chiffré (HTTPS)]               │
-           │                             │
-           ▼                             │
-    ┌──────────────┐                     │
-    │   Gateway    │── Déchiffre TLS ────┤
-    │  (Envoy)     │                     │
-    └──────────────┘                     │
-           │                             │
-           │ HTTP en clair               │
-           ▼                             │
-    ┌──────────────┐                     │
-    │   Service    │─────────────────────┘
-    │   mon-app    │
-    └──────────────┘
-```
-
-#### `allowedRoutes` : Contrôle d'accès au Gateway
-
-```yaml
-allowedRoutes:
-  namespaces:
-    from: All # Tous les namespaces peuvent créer des HTTPRoutes
-```
-
-**Options :**
-
-- `from: All` — Tous les namespaces (ouvert)
-- `from: Same` — Seulement le namespace du Gateway (restrictif)
-- `from: Selector` — Namespaces avec un label spécifique :
-
-```yaml
-allowedRoutes:
-  namespaces:
-    from: Selector
-    selector:
-      matchLabels:
-        gateway-access: 'true'
-```
-
----
-
-### 2. HTTPRoute (Application) — 1 par service exposé
-
-**Emplacement :** Dans chaque Helm Chart (`charts/sample-app/templates/httproute.yaml`)
-
-Ton fichier existe déjà : `charts/sample-app/templates/httproute.yaml`
-
-**Activation dans `values.yaml` :**
-
-```yaml
-httpRoute:
-  enabled: true
-  parentRefs:
-    - name: public-gateway
-      namespace: envoy-gateway-system
-  hostnames:
-    - 'sample-app.example.com'
-  rules:
-    - matches:
-        - path:
-            type: PathPrefix
-            value: /
-      backendRefs:
-        - name: sample-app
-          port: 80
-          weight: 100
-```
-
-**Qui le gère :** Chaque développeur dans son propre namespace
-
-**Combien :** **Un par application/service** à exposer
-
----
-
-## Mapping : Ancien Ingress vs Nouveau Gateway API
-
-| Concept Ancien             | Emplacement Ancien                | Concept Nouveau        | Emplacement Nouveau                 |
-| -------------------------- | --------------------------------- | ---------------------- | ----------------------------------- |
-| Ingress Controller (NGINX) | `infra/ingress/`                  | GatewayClass + Gateway | `infra/gateway/gateway-public.yaml` |
-| Ingress resource par app   | `charts/*/templates/ingress.yaml` | HTTPRoute par app      | `charts/*/templates/httproute.yaml` |
-| Service (même)             | `charts/*/templates/service.yaml` | Service (même)         | `charts/*/templates/service.yaml`   |
-
----
-
-## Exemple complet de flux de déploiement
-
-### Étape 1 : Déployer l'infrastructure (une fois)
-
-```bash
-# 1. Installer Envoy Gateway (crée GatewayClass automatiquement)
-ansible-playbook -i inventory.yml ansible/install_gateway-api.yml
-
-# 2. Déployer le Gateway public (si pas déjà fait par Helm)
-kubectl apply -f infra/gateway/gateway-public.yaml
-
-# 3. Vérifier
-kubectl get gateway -n envoy-gateway-system
-# NAME             CLASS           ADDRESS        READY   AGE
-# public-gateway   envoy-gateway   15.237.15.14   True    5m
-```
-
-### Étape 2 : Déployer une application (pour chaque app)
-
-```bash
-# Le HTTPRoute est dans le chart, activé via values.yaml
-helm install sample-app charts/sample-app -f charts/sample-app/secrets.yaml
-
-# Vérifier que la route est attachée au gateway
-kubectl get httproute
-# NAME       HOSTNAMES               AGE
-# sample-app    sample-app.example.com     10s
-```
-
-### Étape 3 : Vérifier le routage
-
-```bash
-# Voir la configuration complète envoyée à Envoy
-kubectl get gateway public-gateway -n envoy-gateway-system -o yaml
-
-# Voir les routes programmées
-kubectl get httproute -A
-
-# Test depuis l'extérieur
-curl -H "Host: sample-app.example.com" http://15.237.15.14/
-```
-
----
-
-## Cas d'usage avancés
-
-### Plusieurs Gateways (multi-environnement)
-
-```
-infra/gateway/
-├── gateway-public.yaml      # Production (port 80/443)
-├── gateway-staging.yaml     # Staging (port 8080)
-└── gateway-internal.yaml    # Services internes (VPC uniquement)
-```
-
-```yaml
-# gateway-staging.yaml
-apiVersion: gateway.networking.k8s.io/v1
-kind: Gateway
-metadata:
-  name: staging-gateway
+  name: envoy-hostnetwork
   namespace: envoy-gateway-system
 spec:
-  gatewayClassName: envoy-gateway
-  listeners:
-    - name: http-staging
-      protocol: HTTP
-      port: 8080 # Port différent pour staging
-      allowedRoutes:
-        namespaces:
-          from: Selector
-          selector:
-            matchLabels:
-              env: staging # Seulement les namespaces labelisés "staging"
+  provider:
+    type: Kubernetes
+    kubernetes:
+      envoyDeployment:
+        replicas: 2 # HA
+        patch:
+          type: StrategicMerge
+          value:
+            spec:
+              template:
+                spec:
+                  topologySpreadConstraints: # 1 pod par worker max
+                    - maxSkew: 1
+                      topologyKey: kubernetes.io/hostname
+                      whenUnsatisfiable: ScheduleAnyway
+                      labelSelector:
+                        matchLabels:
+                          app.kubernetes.io/name: envoy
+      envoyService:
+        type: NodePort
+        externalTrafficPolicy: Local # préserve l'IP source client
+        ports:
+          - name: http
+            port: 80
+            nodePort: 30080
 ```
 
-### Routage avancé avec HTTPRoute
+Points clés :
 
-```yaml
-apiVersion: gateway.networking.k8s.io/v1
-kind: HTTPRoute
-metadata:
-  name: api-route
-  namespace: default
-spec:
-  parentRefs:
-    - name: public-gateway
-      namespace: envoy-gateway-system
-  hostnames:
-    - 'api.example.com'
-  rules:
-    # Route API vers v2 (Canary : 10% du trafic)
-    - matches:
-        - headers:
-            - name: X-Canary
-              value: 'true'
-      backendRefs:
-        - name: api-v2
-          port: 80
-          weight: 100
-
-    # Route par path
-    - matches:
-        - path:
-            type: PathPrefix
-            value: /api/v2
-      backendRefs:
-        - name: api-v2
-          port: 80
-
-    # Route par défaut
-    - matches:
-        - path:
-            type: PathPrefix
-            value: /api/v1
-      backendRefs:
-        - name: api-v1
-          port: 80
-          weight: 90
-        - name: api-v2
-          port: 80
-          weight: 10 # 10% vers v2 pour test
-```
+- **`replicas: 2`** + **`topologySpreadConstraints`** : 2 pods Envoy schedulés sur 2 workers différents. Si un worker tombe, le trafic continue.
+- **`type: NodePort`** : indispensable sur ce cluster (cf. §4 ci-dessous et `deployment-guide.md`).
+- **`externalTrafficPolicy: Local`** : le kube-proxy ne fait **pas** de SNAT, donc l'IP source du client est préservée (utile pour logs, rate-limiting, géoloc). Conséquence : seuls les nœuds qui hébergent un pod Envoy répondent au health check du NLB → le NLB n'envoie du trafic qu'à eux.
+- **Pas de `nodeSelector master`, pas de tolerations control-plane** : on ne place pas de dataplane sur le control-plane (anti-pattern).
 
 ---
 
-## Checklist migration Ingress → Gateway API
+## 4. Pourquoi pas un Service `type: LoadBalancer` direct ?
 
-| Étape | Action                      | Fichier concerné                          |
-| ----- | --------------------------- | ----------------------------------------- |
-| 1     | Désactiver l'ancien Ingress | `values.yaml` : `ingress.enabled: false`  |
-| 2     | Créer le Gateway (ops)      | `infra/gateway/gateway-public.yaml`       |
-| 3     | Activer HTTPRoute (dev)     | `values.yaml` : `httpRoute.enabled: true` |
-| 4     | Configurer parentRefs       | Pointer vers `public-gateway`             |
-| 5     | Tester                      | `curl` avec Host header                   |
-| 6     | Supprimer ancien Ingress    | `kubectl delete ingress xxx`              |
+Sur un cluster **EKS managé**, `type: LoadBalancer` provisionnerait automatiquement un NLB AWS. Ici, **ce n'est pas EKS** : il n'y a ni `aws-cloud-controller-manager` ni `aws-load-balancer-controller` installé. Un Service `LoadBalancer` resterait donc indéfiniment en `EXTERNAL-IP: <pending>`.
+
+→ On utilise **NodePort + NLB AWS créé manuellement** comme front. C'est la même chose que ferait le LB Controller, juste branché à la main. Justification complète : [`deployment-guide.md` §2](./deployment-guide.md#2-pourquoi-nodeport--nlb-manuel-et-pas-loadbalancer).
 
 ---
 
-## Commandes de debug
+## 5. Séparation des responsabilités
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│ INFRASTRUCTURE (ops / ce repo)                                │
+│ ns: envoy-gateway-system                                      │
+│   - Helm release  envoy-gateway     (install_gateway-api.yml) │
+│   - EnvoyProxy    envoy-nodeport    (deploy_gateway.yml)      │
+│   - GatewayClass  envoy-gateway     (deploy_gateway.yml)      │
+│   - Gateway       public-gateway    (deploy_gateway.yml)      │
+└──────────────────────────────────────────────────────────────┘
+                          ▲
+                          │ parentRefs
+                          │
+┌──────────────────────────────────────────────────────────────┐
+│ APPLICATIONS (1 par app, dans le ns de l'app)                 │
+│   - HTTPRoute   (routage hostname/path → Service)             │
+│   - Service     (ClusterIP, déjà créé par le chart Helm)      │
+└──────────────────────────────────────────────────────────────┘
+```
+
+| Couche      | Qui possède       | Source                                     |
+| ----------- | ----------------- | ------------------------------------------ |
+| CRDs + ctrl | Ops               | `ansible/install_gateway-api.yml`          |
+| Dataplane   | Ops               | `ansible/deploy_gateway.yml` (EnvoyProxy)  |
+| Gateway     | Ops               | `ansible/deploy_gateway.yml`               |
+| HTTPRoute   | Dev de chaque app | `infra/<app>/httproute.yaml` ou chart Helm |
+
+---
+
+## 6. Flux d'une requête HTTP
+
+Exemple : `curl http://headlamp.15.237.15.14.nip.io/`
+
+1. **Résolution DNS** : `nip.io` retourne `15.237.15.14` (Elastic IP attachée au NLB AWS).
+2. **NLB AWS** reçoit en TCP:80, forwarde vers le TargetGroup TCP:30080.
+3. **Health check NLB** : avec `externalTrafficPolicy: Local`, seuls les workers hébergeant un pod Envoy sont `healthy`. Le NLB n'envoie le trafic qu'à eux.
+4. **kube-proxy** sur le worker sélectionné délivre le paquet au pod Envoy local (pas de SNAT).
+5. **Envoy** lit `Host: headlamp.15.237.15.14.nip.io`, cherche un `HTTPRoute` attaché à `public-gateway` qui matche ce hostname → trouve `headlamp/headlamp`.
+6. **Envoy** forwarde vers `backendRefs[0]` = Service `headlamp:80` (ClusterIP).
+7. **Service ClusterIP** load-balance vers un pod Headlamp.
+
+---
+
+## 7. Commandes de debug
 
 ```bash
-# Voir tous les objets Gateway API
-kubectl get gateway,httproute,tlsroute -A
+# Vue d'ensemble
+kubectl get gateway,httproute,gatewayclass -A
 
-# Voir la configuration détaillée d'un Gateway
+# État du Gateway (condition Programmed=True attendue)
 kubectl describe gateway public-gateway -n envoy-gateway-system
 
-# Voir les routes attachées
-kubectl describe httproute mon-app -n default
+# Répartition des pods Envoy
+kubectl get pods -n envoy-gateway-system \
+  -l gateway.envoyproxy.io/owning-gateway-name=public-gateway -o wide
 
-# Voir les logs du contrôleur Envoy
+# Service NodePort (vérifier nodePort=30080)
+kubectl get svc -n envoy-gateway-system
+
+# Logs du contrôleur
 kubectl logs -n envoy-gateway-system -l app.kubernetes.io/name=envoy-gateway
 
-# Voir la configuration Envoy générée
-kubectl get configmap -n envoy-gateway-system envoy-gateway-config -o yaml
+# Logs d'un dataplane (Envoy access logs)
+kubectl logs -n envoy-gateway-system <envoy-pod>
+
+# Test direct depuis le master (court-circuit du NLB)
+curl -H 'Host: headlamp.15.237.15.14.nip.io' http://<worker-ip>:30080/
 ```
 
 ---
 
-## Procédure de déploiement complète
-
-### Comment Ansible se connecte à tes VMs AWS
-
-Ansible utilise SSH pour se connecter à tes instances EC2. La configuration est dans `ansible/inventory.yml` :
-
-```yaml
-# Connexion directe au Master (IP publique)
-master:
-  ansible_host: 15.237.15.14 # ← IP publique AWS
-  ansible_ssh_private_key_file: ~/.ssh/kubequest.pem
-
-# Connexion aux Workers via ProxyCommand (IP privées uniquement)
-worker1:
-  ansible_host: 10.0.3.198 # ← IP privée (pas d'accès Internet direct)
-  ansible_ssh_common_args: '-o ProxyCommand="ssh -i ~/.ssh/kubequest.pem ... -W %h:%p ec2-user@15.237.15.14"'
-```
-
-**Schéma de connexion :**
-
-```
-Ton PC (local) ──SSH──► Master (15.237.15.14) ──tunnel──► Worker1 (10.0.3.198)
-                              ↑                              ↑
-                         IP publique                    IP privée (VPC)
-                    (accessible depuis               (accessible uniquement
-                     ton réseau)                       via le Master)
-```
-
-**Explication du ProxyCommand :**
-
-- `-W %h:%p` : Crée un tunnel TCP vers l'hôte et port cible
-- Ansible se connecte d'abord au Master, puis "rebondit" vers les Workers via le réseau privé AWS
-
----
-
-### Prérequis avant déploiement
-
-**Sur ton PC (contrôleur Ansible) :**
-
-```bash
-# 1. Vérifier qu'Ansible est installé
-ansible --version
-# Si non : pip install ansible
-
-# 2. Vérifier la clé SSH AWS
-ls ~/.ssh/kubequest.pem
-# Si absent : récupérer la clé depuis la console AWS EC2
-
-# 3. Vérifier les permissions de la clé (important !)
-chmod 600 ~/.ssh/kubequest.pem
-
-# 4. Tester la connectivité SSH
-cd ansible
-ansible-playbook -i inventory.yml test_connectivity.yml
-# Doit afficher "ping" réussi pour master, worker1, worker2, worker3
-```
-
-**Configuration requise :**
-
-- Ansible ≥ 2.9
-- Python ≥ 3.8
-- Clé SSH `~/.ssh/kubequest.pem` (fournie par AWS)
-- Accès réseau au Master (IP publique dans `inventory.yml`)
-
----
-
-### Partie 1 : Déployer l'infrastructure Gateway API
-
-**Étape 1 : Installer Envoy Gateway (une seule fois par cluster)**
-
-```bash
-cd ansible
-
-# Déployer Gateway API CRDs + Envoy Gateway via Helm
-ansible-playbook -i inventory.yml install_gateway-api.yml
-```
-
-Ce playbook exécute sur le Master :
-
-1. Installation des CRDs Gateway API (v1.5.0)
-2. Ajout du repo Helm Envoy Gateway
-3. Installation du chart Helm Envoy Gateway (v1.7.1)
-
-**Étape 2 : Déployer le Gateway public**
-
-Via Ansible (recommandé) :
-
-```bash
-# Déployer le Gateway public avec le playbook dédié
-ansible-playbook -i inventory.yml deploy_gateway.yml
-```
-
-Ce playbook crée le Gateway `public-gateway` dans le namespace `envoy-gateway-system` avec :
-
-- Listener HTTP sur port 80
-- AWS NLB (Network Load Balancer) pour les performances
-- Routes autorisées depuis tous les namespaces
-
-> **Pourquoi pas `kubectl apply` ?** Le playbook Ansible évite de copier des fichiers sur le Master et versionne la configuration dans Git via le playbook inline.
-
-**Étape 3 : Vérifier l'installation**
-
-```bash
-# Vérifier le GatewayClass (créé automatiquement)
-kubectl get gatewayclass
-# NAME             CONTROLLER
-# envoy-gateway    gateway.envoyproxy.io/gatewayclass-controller
-
-# Vérifier le Gateway
-kubectl get gateway -n envoy-gateway-system
-# NAME             CLASS           ADDRESS        READY   AGE
-# public-gateway   envoy-gateway   15.237.15.14   True    5m
-
-# Vérifier les pods Envoy Gateway
-kubectl get pods -n envoy-gateway-system
-# NAME                             READY   STATUS
-# envoy-gateway-xxx                2/2     Running
-```
-
----
-
-### Partie 2 : Déployer une application avec HTTPRoute
-
-**Étape 1 : Configurer values.yaml**
-
-Dans `charts/sample-app/values.yaml` :
-
-```yaml
-httpRoute:
-  enabled: true
-  parentRefs:
-    - name: public-gateway
-      namespace: envoy-gateway-system
-  hostnames:
-    - 'sample-app.example.com' # ← Ton domaine
-  rules:
-    - matches:
-        - path:
-            type: PathPrefix
-            value: /
-      backendRefs:
-        - name: sample-app
-          port: 80
-          weight: 100
-```
-
-**Étape 2 : Déployer avec Helm**
-
-```bash
-# Depuis ton PC (ou le Master avec kubectl configuré)
-helm install sample-app charts/sample-app -f charts/sample-app/secrets.yaml
-
-# Ou mettre à jour si déjà déployé
-helm upgrade sample-app charts/sample-app -f charts/sample-app/secrets.yaml
-```
-
-**Étape 3 : Vérifier le déploiement**
-
-```bash
-# Vérifier l'HTTPRoute
-kubectl get httproute
-# NAME         HOSTNAMES                 AGE
-# sample-app   sample-app.example.com    30s
-
-# Vérifier que le Service existe
-kubectl get svc sample-app
-# NAME         TYPE        CLUSTER-IP      PORT(S)
-# sample-app   ClusterIP   10.96.123.45    80/TCP
-
-# Vérifier les pods
-kubectl get pods -l app.kubernetes.io/name=sample-app
-```
-
----
-
-### Partie 3 : Tester l'accès depuis l'extérieur
-
-**Méthode 1 : Avec le domaine configuré**
-
-```bash
-# Si tu as configuré DNS ou /etc/hosts
-curl http://sample-app.example.com
-# Doit retourner la réponse de ton application
-```
-
-**Méthode 2 : Avec l'IP du LoadBalancer et Host header**
-
-```bash
-# Récupérer l'IP du Gateway (AWS ELB)
-kubectl get gateway public-gateway -n envoy-gateway-system -o jsonpath='{.status.addresses[0].value}'
-# 15.237.15.14
-
-# Tester avec curl
-curl -H "Host: sample-app.example.com" http://15.237.15.14/
-```
-
-**Méthode 3 : Port-forward pour test local**
-
-```bash
-# Exposer le Service localement (pas besoin du Gateway)
-kubectl port-forward svc/sample-app 8080:80
-# Puis ouvrir http://localhost:8080 dans ton navigateur
-```
-
----
-
-### Récapitulatif des commandes
-
-| Action                  | Commande                                                          |
-| ----------------------- | ----------------------------------------------------------------- |
-| **Test connexion SSH**  | `ansible-playbook -i inventory.yml test_connectivity.yml`         |
-| **Install Gateway API** | `ansible-playbook -i inventory.yml install_gateway-api.yml`       |
-| **Déployer Gateway**    | `ansible-playbook -i inventory.yml deploy_gateway.yml`            |
-| **Déployer app**        | `helm install sample-app charts/sample-app -f secrets.yaml`       |
-| **Mettre à jour app**   | `helm upgrade sample-app charts/sample-app -f secrets.yaml`       |
-| **Supprimer app**       | `helm uninstall sample-app`                                       |
-| **Voir routes**         | `kubectl get httproute`                                           |
-| **Debug Gateway**       | `kubectl describe gateway public-gateway -n envoy-gateway-system` |
-
----
-
-## Bonnes pratiques d'architecture
-
-### Séparer Gateway API et Envoy Gateway
-
-L'approche recommandée sépare l'**API standard** (infrastructure) de l'**implémentation** (contrôleur) :
-
-```
-┌─────────────────────────────────────────┐
-│  COUCHE 1 : Gateway API (Standard)      │
-│  - CRDs : GatewayClass, Gateway,        │
-│    HTTPRoute, TLSRoute, etc.            │
-│  - Géré par : Cluster Admin               │
-│  - Version : v1.5.0 (standard)          │
-└─────────────────────────────────────────┘
-                    ↓
-┌─────────────────────────────────────────┐
-│  COUCHE 2 : Envoy Gateway (Implémentation) │
-│  - Controller : Envoy Gateway             │
-│  - Namespace : envoy-gateway-system       │
-│  - Géré par : Platform/Ops Team           │
-│  - Version : v1.7.2                       │
-└─────────────────────────────────────────┘
-                    ↓
-┌─────────────────────────────────────────┐
-│  COUCHE 3 : Applications (Usage)          │
-│  - HTTPRoute par application              │
-│  - Géré par : Dev Teams                   │
-└─────────────────────────────────────────┘
-```
-
-**Avantages de cette séparation :**
-
-| Avantage                    | Explication                                                                        |
-| --------------------------- | ---------------------------------------------------------------------------------- |
-| **Standardisation**         | Gateway API v1.5.0 est un standard CNCF. Même API pour tous les clusters.          |
-| **Vendor Independence**     | Tu peux remplacer Envoy par NGINX Gateway, Istio, ou Cilium sans toucher aux CRDs. |
-| **Mises à jour contrôlées** | Met à jour Envoy Gateway sans risquer les CRDs partagées.                          |
-| **Gouvernance claire**      | Cluster Admin = infrastructure, Ops = contrôleur, Devs = routes.                   |
-
-**Quand NE PAS séparer ?**
-
-- PoC rapide : utilise le quickstart officiel
-- Cluster mono-usage : laisser le chart Helm tout gérer
-
-### Pourquoi ne pas utiliser le quickstart ?
-
-Le `quickstart.yaml` de la doc officielle installe :
-
-- Gateway API CRDs
-- Envoy Gateway
-- **+ Un GatewayClass** (envoy-gateway)
-- **+ Un Gateway** (pour exemple)
-- **+ Une HTTPRoute** (pour exemple)
-
-**Problème** : Mélange infrastructure et exemples. En production, tu veux :
-
-- Ton propre Gateway public (avec ton IP AWS, tes certificats)
-- Pas d'exemples qui polluent le cluster
-- Contrôle total sur la configuration
-
-**Solution** : Le playbook Ansible sépare proprement les étapes sans le quickstart.
-
----
-
-## Alternative : Installation sans dépendances Python
-
-Si ton cluster n'a pas Python ou la bibliothèque `kubernetes` installée, voici une version alternative du playbook utilisant uniquement `kubectl` et `helm` :
-
-```yaml
----
-- name: Install Gateway API and Envoy Gateway (sans Python)
-  hosts: k8s_master
-  become: yes
-  vars:
-    gateway_api_version: 'v1.5.0'
-    envoy_version: 'v1.7.2'
-  tasks:
-    # ==========================================
-    # ÉTAPE 1 : Gateway API CRDs (via kubectl)
-    # Avantage : Aucune dépendance Python requise
-    # ==========================================
-    - name: 'Install Gateway API CRDs'
-      shell: |
-        set -e
-        export KUBECONFIG={{ k8s_master_config }}
-
-        kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/{{ gateway_api_version }}/standard-install.yaml
-
-        echo "CRDs Gateway API {{ gateway_api_version }} installées"
-      args:
-        executable: /bin/bash
-
-    # ==========================================
-    # ÉTAPE 2 : Envoy Gateway (Helm avec --skip-crds)
-    # ==========================================
-    - name: 'Install Envoy Gateway via Helm'
-      shell: |
-        set -e
-        export KUBECONFIG={{ k8s_master_config }}
-
-        helm upgrade --install envoy-gateway oci://docker.io/envoyproxy/gateway-helm \
-          --version {{ envoy_version }} \
-          --namespace envoy-gateway-system \
-          --create-namespace \
-          --skip-crds \
-          --wait
-
-        echo "Envoy Gateway installé avec succès"
-      args:
-        executable: /bin/bash
-
-    # ==========================================
-    # ÉTAPE 3 : Vérification
-    # ==========================================
-    - name: 'Wait for Envoy Gateway'
-      shell: |
-        export KUBECONFIG={{ k8s_master_config }}
-        kubectl wait --timeout=5m -n envoy-gateway-system deployment/envoy-gateway --for=condition=Available
-      args:
-        executable: /bin/bash
-
-    - name: 'Display status'
-      shell: |
-        export KUBECONFIG={{ k8s_master_config }}
-        echo "=== GatewayClass ==="
-        kubectl get gatewayclass
-        echo ""
-        echo "=== Pods ==="
-        kubectl get pods -n envoy-gateway-system
-      args:
-        executable: /bin/bash
-      changed_when: false
-```
-
-### Comparaison des méthodes
-
-| Aspect                  | `kubernetes.core.k8s`     | `kubectl` shell                 |
-| ----------------------- | ------------------------- | ------------------------------- |
-| **Dépendances**         | Python + lib `kubernetes` | Aucune (kubectl uniquement)     |
-| **Idempotence**         | Native (vérifie l'état)   | À gérer manuellement            |
-| **Messages d'erreur**   | Détails Ansible           | Sortie brute kubectl            |
-| **Intégration Ansible** | Excellente                | Basique                         |
-| **Quand l'utiliser ?**  | Cluster avec Python       | Cluster minimaliste sans Python |
-
-**Note** : La méthode avec `kubernetes.core.k8s` est recommandée si Python est disponible, car elle offre une meilleure intégration avec Ansible (status `changed` précis, gestion d'erreurs, etc.).
+## 8. Pour aller plus loin
+
+- TLS terminé au Gateway : ajouter un listener `HTTPS:443` avec `tls.mode: Terminate` et un `Secret` `kubernetes.io/tls` référencé via `certificateRefs`.
+- Canary / split de trafic : plusieurs `backendRefs` pondérés par `weight`.
+- Multi-tenant : `allowedRoutes.namespaces.from: Selector` + labels de namespace.
+- Filtres (rewrite, redirect, headers) : `rules[].filters` dans l'HTTPRoute.

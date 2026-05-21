@@ -3,33 +3,30 @@
   hosts: k8s_master
   become: yes
   tasks:
-    # CRDs Gateway API standard (avant le chart Envoy Gateway).
-    - name: Install Gateway API CRDs
-      kubernetes.core.k8s:
-        kubeconfig: "{{ k8s_master_config }}"
-        src: https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.5.0/standard-install.yaml
-        state: present
-
-    # Chart publié en OCI sur Docker Hub (l’ancien repo HTTPS github.io renvoie 404).
-    - name: Install Envoy Gateway
+    # Une seule commande : en v1.8.0 le chart gateway-helm embarque TOUS les CRDs
+    # (Gateway API + Envoy Gateway) dans crds/.
+    # Équivalent CLI : helm install eg oci://docker.io/envoyproxy/gateway-helm --version v1.8.0 -n envoy-gateway-system --create-namespace
+    # Versions : https://hub.docker.com/r/envoyproxy/gateway-helm/tags
+    # Ref: https://gateway.envoyproxy.io/docs/install/install-helm/
+    - name: Install Envoy Gateway (includes all CRDs)
       kubernetes.core.helm:
-        kubeconfig: "{{ k8s_master_config }}"
+        kubeconfig: '{{ k8s_master_config }}'
         name: envoy-gateway
         chart_ref: oci://docker.io/envoyproxy/gateway-helm
         release_namespace: envoy-gateway-system
         create_namespace: yes
-        chart_version: v1.7.1
+        chart_version: v1.8.0
+        wait: yes
+        wait_timeout: 5m
 
-    - name: Copy Gateway manifests to master
-      ansible.builtin.copy:
-        src: "{{ playbook_dir }}/../infra/gateway/"
-        dest: /tmp/kubequest/infra/gateway/
-        mode: "0644"
-        directory_mode: "0755"
-
-    - name: Apply Gateway (NLB public + ReferenceGrant cross-namespace)
-      ansible.builtin.shell: |
-        set -euo pipefail
-        KUBECONFIG="{{ k8s_master_config }}" kubectl apply -k /tmp/kubequest/infra/gateway/
+    - name: Wait for envoy-gateway controller Deployment ready
+      shell: |
+        export KUBECONFIG={{ k8s_master_config }}
+        kubectl -n envoy-gateway-system rollout status deploy/envoy-gateway --timeout=180s
       args:
         executable: /bin/bash
+      changed_when: false
+
+    # Note : La création du GatewayClass et du Gateway public est gérée par
+    # le playbook séparé `deploy_gateway.yml` (séparation infra vs config).
+    # Ce playbook se limite à installer les CRDs + le contrôleur Envoy Gateway.

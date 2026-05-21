@@ -11,8 +11,10 @@ spec:
     - name: public-gateway
       namespace: envoy-gateway-system
   hostnames:
-    # Utiliser nip.io pour avoir un hostname dédié sans config DNS
-    # Remplace 15.237.15.14 par ton IP AWS réelle
+    # nip.io = DNS magique qui résout *.X.X.X.X.nip.io vers l'IP X.X.X.X
+    # Idéal pour test/démo sans configurer de DNS réel.
+    # En production : remplacer par un vrai domaine (ex: headlamp.kubequest.com)
+    # avec un CNAME pointant vers le LoadBalancer AWS.
     - headlamp.15.237.15.14.nip.io
   rules:
     - matches:

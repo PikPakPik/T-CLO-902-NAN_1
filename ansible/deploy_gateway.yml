@@ -1,17 +1,63 @@
 ---
-# Playbook : Déploiement du Gateway Public
-# Objectif : Créer le Gateway public qui recevra le trafic HTTP/HTTPS
-# Séparation des responsabilités : Infrastructure (install_gateway-api.yml) vs Configuration (ce fichier)
+# Playbook : Déploiement du Gateway public (mode hostNetwork sur master)
+#
+# Architecture :
+#   Internet → EIP 15.237.15.14:80 → Master node → Pod Envoy (hostNetwork)
+#                                                    → HTTPRoute → Service ClusterIP
+#
+# Pourquoi hostNetwork ?
+#   - Workers = IP privées uniquement (pas joignables depuis Internet)
+#   - Master = EIP publique avec port 80 ouvert dans le SG
+#   - Pas de cloud-controller AWS → LoadBalancer impossible
+#   - Pas de ressource AWS à créer (NLB, TG, etc.)
+#
+# Note : hostNetwork sur le control-plane est un anti-pattern en prod,
+#         mais acceptable pour un cluster dev/test sans ressource AWS.
 
-- name: Deploy Gateway Public
+- name: Deploy public Gateway (hostNetwork on master)
   hosts: k8s_master
   become: yes
   vars:
-    gateway_name: 'public-gateway'
-    gateway_namespace: 'envoy-gateway-system'
+    gateway_namespace: envoy-gateway-system
+    gateway_name: public-gateway
+    envoyproxy_name: envoy-hostnetwork
+    master_node: "{{ hostvars[groups['k8s_master'][0]]['ansible_host'] }}"
   tasks:
     # ==========================================
-    # ÉTAPE 1 : Créer le GatewayClass (nécessaire pour que Envoy Gateway reconnaisse le Gateway)
+    # ÉTAPE 1 : EnvoyProxy — hostNetwork + pin sur master
+    # ==========================================
+    - name: 'Create EnvoyProxy config (hostNetwork on master)'
+      kubernetes.core.k8s:
+        kubeconfig: '{{ k8s_master_config }}'
+        state: present
+        definition:
+          apiVersion: gateway.envoyproxy.io/v1alpha1
+          kind: EnvoyProxy
+          metadata:
+            name: '{{ envoyproxy_name }}'
+            namespace: '{{ gateway_namespace }}'
+          spec:
+            provider:
+              type: Kubernetes
+              kubernetes:
+                envoyDeployment:
+                  patch:
+                    type: StrategicMerge
+                    value:
+                      spec:
+                        template:
+                          spec:
+                            hostNetwork: true
+                            dnsPolicy: ClusterFirstWithHostNet
+                            nodeSelector:
+                              kubernetes.io/hostname: '{{ ansible_hostname }}'
+                            tolerations:
+                              - key: node-role.kubernetes.io/control-plane
+                                operator: Exists
+                                effect: NoSchedule
+
+    # ==========================================
+    # ÉTAPE 2 : GatewayClass — lie le contrôleur à notre EnvoyProxy
     # ==========================================
     - name: 'Create GatewayClass envoy-gateway'
       kubernetes.core.k8s:
@@ -24,14 +70,16 @@
             name: envoy-gateway
           spec:
             controllerName: gateway.envoyproxy.io/gatewayclass-controller
-            description: 'Envoy Gateway controller'
+            parametersRef:
+              group: gateway.envoyproxy.io
+              kind: EnvoyProxy
+              name: '{{ envoyproxy_name }}'
+              namespace: '{{ gateway_namespace }}'
 
     # ==========================================
-    # ÉTAPE 2 : Créer le Gateway via template inline
-    # Bonne pratique : Pas de copie de fichier, on génère la ressource directement
-    # Cela permet aussi de paramétrer via Ansible vars si besoin
+    # ÉTAPE 3 : Gateway — point d'entrée HTTP:80
     # ==========================================
-    - name: 'Create Gateway public'
+    - name: 'Create public Gateway'
       kubernetes.core.k8s:
         kubeconfig: '{{ k8s_master_config }}'
         state: present
@@ -41,53 +89,72 @@
           metadata:
             name: '{{ gateway_name }}'
             namespace: '{{ gateway_namespace }}'
-            # Note : Annotation NLB désactivée pour test
-            # Si le cluster a les IAM permissions AWS, décommenter :
-            # annotations:
-            #   service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
           spec:
             gatewayClassName: envoy-gateway
             listeners:
-              # HTTP sur port 80
               - name: http
                 protocol: HTTP
                 port: 80
                 allowedRoutes:
                   namespaces:
-                    from: All # Permet aux routes de tous les namespaces
+                    from: All
 
     # ==========================================
     # ÉTAPE 4 : Attendre que le Gateway soit prêt
     # ==========================================
-    - name: 'Wait for Gateway to be programmed'
+    - name: 'Wait for Gateway to be Programmed'
       shell: |
         export KUBECONFIG={{ k8s_master_config }}
-        kubectl wait --timeout=3m -n {{ gateway_namespace }} gateway/{{ gateway_name }} --for=condition=Programmed || true
+        kubectl -n {{ gateway_namespace }} wait gateway/{{ gateway_name }} \
+          --for=condition=Programmed --timeout=3m || true
       args:
         executable: /bin/bash
+      changed_when: false
+
+    - name: 'Wait for Envoy dataplane pod Ready'
+      shell: |
+        export KUBECONFIG={{ k8s_master_config }}
+        kubectl -n {{ gateway_namespace }} wait pod \
+          -l gateway.envoyproxy.io/owning-gateway-name={{ gateway_name }} \
+          --for=condition=Ready --timeout=3m || true
+      args:
+        executable: /bin/bash
+      changed_when: false
 
     # ==========================================
-    # ÉTAPE 5 : Afficher le statut et l'adresse IP
+    # ÉTAPE 5 : Afficher le statut
     # ==========================================
     - name: 'Display Gateway status'
       shell: |
         export KUBECONFIG={{ k8s_master_config }}
+        echo "=== GatewayClass ==="
+        kubectl get gatewayclass envoy-gateway
         echo ""
-        echo "=== Gateway Public Status ==="
+        echo "=== Gateway ==="
         kubectl get gateway -n {{ gateway_namespace }} {{ gateway_name }} -o wide
         echo ""
-        echo "=== LoadBalancer Address ==="
-        kubectl get gateway -n {{ gateway_namespace }} {{ gateway_name }} -o jsonpath='{.status.addresses[0].value}' 2>/dev/null || echo "En attente de l'IP..."
+        echo "=== Envoy dataplane pod (doit être sur master) ==="
+        kubectl get pods -n {{ gateway_namespace }} -o wide
         echo ""
-      args:
-        executable: /bin/bash
-      changed_when: false
-
-    - name: 'Get Services in envoy-gateway-system'
-      shell: |
-        export KUBECONFIG={{ k8s_master_config }}
-        echo "=== Services (LoadBalancer) ==="
+        echo "=== Service Envoy ==="
         kubectl get svc -n {{ gateway_namespace }}
       args:
         executable: /bin/bash
       changed_when: false
+
+    - name: 'Access information'
+      debug:
+        msg:
+          - '=========================================='
+          - '  GATEWAY DÉPLOYÉ (hostNetwork sur master)'
+          - '=========================================='
+          - ''
+          - 'Accès Internet : http://{{ master_node }}/'
+          - ''
+          - 'Le pod Envoy écoute directement sur port 80 du master.'
+          - 'Vérifiez que le pod est bien sur le master (kubectl get pods -o wide).'
+          - ''
+          - 'Test depuis Internet :'
+          - "  curl -H 'Host: headlamp.{{ master_node }}.nip.io' http://{{ master_node }}/"
+          - ''
+          - '=========================================='

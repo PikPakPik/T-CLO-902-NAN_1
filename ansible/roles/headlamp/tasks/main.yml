@@ -1,34 +1,34 @@
 ---
-- name: "[HEADLAMP] Vérifier que kubectl est disponible"
+- name: '[HEADLAMP] Vérifier que kubectl est disponible'
   command: kubectl version --client=true
   register: kubectl_client_version
   changed_when: false
 
-- name: "[HEADLAMP] Vérifier que Helm est disponible"
+- name: '[HEADLAMP] Vérifier que Helm est disponible'
   command: helm version
   register: helm_version
   failed_when: false
   changed_when: false
 
-- name: "[HEADLAMP] Installer Helm (si absent)"
+- name: '[HEADLAMP] Installer Helm (si absent)'
   when: helm_version.rc != 0
   block:
     - name: "[HEADLAMP] Télécharger le script d'installation Helm"
       get_url:
-        url: "https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3"
+        url: 'https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3'
         dest: /tmp/get-helm-3
-        mode: "0755"
+        mode: '0755'
 
     - name: "[HEADLAMP] Exécuter l'installation Helm"
       command: /tmp/get-helm-3
 
-- name: "[HEADLAMP] Ajouter le repo Helm headlamp"
+- name: '[HEADLAMP] Ajouter le repo Helm headlamp'
   command: helm repo add headlamp https://kubernetes-sigs.github.io/headlamp/
   register: helm_repo_add
   failed_when: helm_repo_add.rc != 0 and ("already exists" not in (helm_repo_add.stderr | default("")))
   changed_when: "'already exists' not in (helm_repo_add.stderr | default(''))"
 
-- name: "[HEADLAMP] Mettre a jour les repos Helm"
+- name: '[HEADLAMP] Mettre a jour les repos Helm'
   command: helm repo update
   changed_when: false
 
@@ -50,7 +50,7 @@
     msg: "Impossible de trouver le node Kubernetes correspondant à {{ headlamp_target_worker | default('worker1') }} (ip={{ hostvars[headlamp_target_worker | default('worker1')].ansible_host }})"
   when: headlamp_target_node_name.stdout | trim == ""
 
-- name: "[HEADLAMP] Installer / mettre à jour Headlamp via Helm"
+- name: '[HEADLAMP] Installer / mettre à jour Headlamp via Helm'
   shell: |
     set -euo pipefail
     target_node="{{ headlamp_target_node_name.stdout | trim }}"
@@ -59,19 +59,20 @@
       --namespace headlamp \
       --create-namespace \
       --set clusterRoleBinding.create=false \
-      --set config.baseURL=/headlamp \
       --set "nodeSelector.kubernetes\\.io/hostname=${target_node}"
+    # Note : baseURL retiré car Headlamp est exposé sur un sous-domaine dédié
+    # via HTTPRoute (headlamp.<IP>.nip.io). Pas besoin de prefix path.
   args:
     executable: /bin/bash
 
-- name: "[HEADLAMP] Copier les manifests Kustomize sur le master"
+- name: '[HEADLAMP] Copier les manifests Kustomize sur le master'
   copy:
-    src: "{{ headlamp_kustomize_src }}/"
+    src: '{{ headlamp_kustomize_src }}/'
     dest: /tmp/kubequest/infra/headlamp/
-    mode: "0644"
-    directory_mode: "0755"
+    mode: '0644'
+    directory_mode: '0755'
 
-- name: "[HEADLAMP] Supprimer le ClusterRoleBinding existant (roleRef immuable)"
+- name: '[HEADLAMP] Supprimer le ClusterRoleBinding existant (roleRef immuable)'
   shell: |
     set -euo pipefail
     KUBECONFIG="{{ k8s_master_config }}" kubectl delete clusterrolebinding headlamp-admin --ignore-not-found=true
@@ -80,14 +81,14 @@
   register: headlamp_crb_delete
   changed_when: "'deleted' in (headlamp_crb_delete.stdout | lower)"
 
-- name: "[HEADLAMP] Appliquer les ressources complémentaires (ServiceAccount/RBAC/Service)"
+- name: '[HEADLAMP] Appliquer les ressources complémentaires (ServiceAccount/RBAC/Service)'
   shell: |
     set -euo pipefail
     KUBECONFIG="{{ k8s_master_config }}" kubectl apply -k /tmp/kubequest/infra/headlamp/
   args:
     executable: /bin/bash
 
-- name: "[HEADLAMP] Vérifier pods / services dans le namespace"
+- name: '[HEADLAMP] Vérifier pods / services dans le namespace'
   shell: |
     set -euo pipefail
     KUBECONFIG="{{ k8s_master_config }}" kubectl get pods,svc,endpoints -n headlamp -o wide
@@ -118,4 +119,3 @@
         (NodePort est publié sur chaque nœud ; le Pod Headlamp est schedulé sur {{ headlamp_target_worker | default('worker1') }}.)
 
       Authentification : générer un token à la demande sur le master (voir docs/headlamp.md), sans le faire apparaître dans les logs ou CI.
-
