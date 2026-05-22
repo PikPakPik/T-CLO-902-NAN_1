@@ -13,6 +13,7 @@ Dans ce projet, Helm sert à déployer l'application Laravel et sa base de donn�
 - `templates/` : Fichiers YAML déployés sur Kubernetes :
   - `deployment.yaml` : Déploiement de l'application Laravel (2 réplicas).
   - `mysql.yaml` : Déploiement MySQL + Service + PersistentVolumeClaim.
+  - `mysql-backup-cronjob.yaml` : CronJob de backup BDD (`mysqldump`) + PVC de stockage des dumps.
   - `migration-job.yaml` : Job de migration BDD exécuté après installation/mise à jour (Helm Hook post-install/post-upgrade).
   - `sealedsecret.yaml` : SealedSecret contenant APP_KEY et le mot de passe BDD (mode recommandé).
   - `secrets.yaml` : Secret Kubernetes en clair (mode legacy, désactivé par défaut).
@@ -20,6 +21,8 @@ Dans ce projet, Helm sert à déployer l'application Laravel et sa base de donn�
   - `httproute.yaml` : HTTPRoute Gateway API pour exposer l'app via Envoy Gateway.
 
 > Les secrets applicatifs passent par **Sealed Secrets** (`values.sealed.yaml`). Les credentials GHCR pour le pull d'image sont injectés au déploiement via `GITHUB_USER` / `GITHUB_TOKEN`. Voir `docs/sealed-secrets.md`.
+
+> Les backups MySQL automatiques (CronJob, rétention, restauration) sont documentés dans [`docs/mysql-backup.md`](mysql-backup.md).
 
 ## Préparer les secrets
 

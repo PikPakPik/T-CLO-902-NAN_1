@@ -40,6 +40,11 @@ database:
   name: "laravel"
   user: "sample_app_user"
   password: ""
+  backup:
+    enabled: true
+    schedule: "0 2 * * *"
+    retentionDays: 7
+    storage: 5Gi
 
 secrets:
   useSealedSecrets: false
