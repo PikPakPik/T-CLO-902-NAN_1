@@ -1,0 +1,9 @@
+---
+galaxy_info:
+  author: kubequest
+  description: Rôle Ansible pour installer et déployer Traefik avec provider Kubernetes Gateway
+  company: Epitech
+  license: MIT
+  min_ansible_version: "2.9"
+
+dependencies: []

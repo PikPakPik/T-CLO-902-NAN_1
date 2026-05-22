@@ -1,0 +1,67 @@
+---
+# Playbook : Reset complet des ressources Traefik + Gateway API
+#
+# À lancer avant un redéploiement "from scratch" pour repartir d'un état propre.
+# Ordre de suppression : HTTPRoutes → Gateway → GatewayClass → Helm release → Namespace.
+# Toutes les tâches sont idempotentes (ignore_errors) : on peut le rejouer sans risque.
+
+- name: Cleanup Traefik + Gateway API resources
+  hosts: k8s_master
+  become: yes
+  tasks:
+    - name: 'Delete HTTPRoute headlamp (si existe)'
+      kubernetes.core.k8s:
+        kubeconfig: '{{ k8s_master_config }}'
+        state: absent
+        api_version: gateway.networking.k8s.io/v1
+        kind: HTTPRoute
+        namespace: headlamp
+        name: headlamp
+      ignore_errors: yes
+
+    - name: 'Delete Gateway public-gateway'
+      kubernetes.core.k8s:
+        kubeconfig: '{{ k8s_master_config }}'
+        state: absent
+        api_version: gateway.networking.k8s.io/v1
+        kind: Gateway
+        namespace: traefik-system
+        name: public-gateway
+      ignore_errors: yes
+
+    - name: 'Delete GatewayClass traefik'
+      kubernetes.core.k8s:
+        kubeconfig: '{{ k8s_master_config }}'
+        state: absent
+        api_version: gateway.networking.k8s.io/v1
+        kind: GatewayClass
+        name: traefik
+      ignore_errors: yes
+
+    - name: 'Helm uninstall traefik'
+      kubernetes.core.helm:
+        kubeconfig: '{{ k8s_master_config }}'
+        name: traefik
+        release_namespace: traefik-system
+        state: absent
+      ignore_errors: yes
+
+    - name: 'Delete namespace traefik-system'
+      kubernetes.core.k8s:
+        kubeconfig: '{{ k8s_master_config }}'
+        state: absent
+        api_version: v1
+        kind: Namespace
+        name: traefik-system
+      ignore_errors: yes
+
+    - name: 'Status après cleanup'
+      shell: |
+        export KUBECONFIG={{ k8s_master_config }}
+        echo "=== GatewayClass (devrait être vide) ==="
+        kubectl get gatewayclass 2>/dev/null || true
+        echo "=== Namespace traefik-system (devrait être absent) ==="
+        kubectl get ns traefik-system 2>/dev/null || echo "absent (OK)"
+      args:
+        executable: /bin/bash
+      changed_when: false

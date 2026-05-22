@@ -1,0 +1,36 @@
+---
+- name: '[TRAEFIK] Copier les manifests Gateway sur le master'
+  ansible.builtin.copy:
+    src: '{{ traefik_kustomize_src }}/'
+    dest: /tmp/kubequest/infra/traefik/
+    mode: '0644'
+    directory_mode: '0755'
+
+- name: '[TRAEFIK] Appliquer le Gateway public (GatewayClass créé par Helm)'
+  ansible.builtin.shell: |
+    set -euo pipefail
+    KUBECONFIG="{{ k8s_master_config }}" kubectl apply -f /tmp/kubequest/infra/traefik/gateway-public.yaml
+  args:
+    executable: /bin/bash
+
+- name: '[TRAEFIK] Attendre que le Gateway soit programmé'
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ k8s_master_config }}"
+    kubectl wait --timeout=3m -n {{ gateway_namespace }} gateway/{{ gateway_name }} --for=condition=Programmed || true
+  args:
+    executable: /bin/bash
+
+- name: '[TRAEFIK] Afficher le statut du Gateway'
+  ansible.builtin.shell: |
+    export KUBECONFIG={{ k8s_master_config }}
+    echo ""
+    echo "=== Gateway Public Status ==="
+    kubectl get gateway -n {{ gateway_namespace }} {{ gateway_name }} -o wide
+    echo ""
+    echo "=== Gateway Address ==="
+    kubectl get gateway -n {{ gateway_namespace }} {{ gateway_name }} -o jsonpath='{.status.addresses[0].value}' 2>/dev/null || echo "En attente..."
+    echo ""
+  args:
+    executable: /bin/bash
+  changed_when: false

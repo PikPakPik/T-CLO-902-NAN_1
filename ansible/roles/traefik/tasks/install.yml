@@ -1,0 +1,73 @@
+---
+- name: '[TRAEFIK] Installer les CRDs Gateway API v1.5.1'
+  kubernetes.core.k8s:
+    kubeconfig: '{{ k8s_master_config }}'
+    src: '{{ gateway_api_crds_url }}'
+    state: present
+
+- name: '[TRAEFIK] Ajouter le repo Helm Traefik'
+  ansible.builtin.command:
+    argv:
+      - helm
+      - repo
+      - add
+      - traefik
+      - '{{ traefik_chart_repo }}'
+  register: traefik_repo_add
+  failed_when: >-
+    traefik_repo_add.rc != 0
+    and ('already exists' not in (traefik_repo_add.stderr | default('')))
+  changed_when: "'already exists' not in (traefik_repo_add.stderr | default(''))"
+
+- name: '[TRAEFIK] Mettre à jour le cache des repos Helm'
+  ansible.builtin.command: helm repo update
+  changed_when: false
+
+- name: '[TRAEFIK] Installer Traefik via Helm (provider Kubernetes Gateway + hostNetwork)'
+  kubernetes.core.helm:
+    kubeconfig: '{{ k8s_master_config }}'
+    name: traefik
+    chart_ref: traefik/traefik
+    release_namespace: '{{ traefik_namespace }}'
+    create_namespace: yes
+    chart_version: '{{ traefik_chart_version }}'
+    update_repo_cache: false
+    values:
+      # Provider Kubernetes Gateway (selon documentation officielle)
+      providers:
+        kubernetesGateway:
+          enabled: true
+
+      # Configuration des entryPoints pour Gateway API
+      ports:
+        web:
+          port: 80
+          expose:
+            default: true
+          protocol: TCP
+        traefik:
+          port: 8000
+          expose:
+            default: true
+          protocol: TCP
+
+      # Pas de Service Kubernetes (on utilise hostNetwork)
+      service:
+        enabled: false
+
+      # hostNetwork pour écouter sur master:80
+      deployment:
+        hostNetwork: true
+        nodeSelector:
+          kubernetes.io/hostname: '{{ ansible_hostname }}'
+        tolerations:
+          - key: node-role.kubernetes.io/control-plane
+            operator: Exists
+
+- name: '[TRAEFIK] Attendre que le Deployment Traefik soit ready'
+  ansible.builtin.shell: |
+    export KUBECONFIG={{ k8s_master_config }}
+    kubectl -n {{ traefik_namespace }} rollout status deploy/traefik --timeout=180s
+  args:
+    executable: /bin/bash
+  changed_when: false
