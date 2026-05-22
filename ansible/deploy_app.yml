@@ -1,0 +1,73 @@
+---
+- name: Vérifier les prérequis locaux
+  hosts: localhost
+  become: false
+  gather_facts: false
+  vars:
+    ansible_become: false
+    secrets_file: "{{ playbook_dir }}/../charts/sample-app/secrets.yaml"
+  tasks:
+    - name: "[APP] Vérifier que le fichier secrets.yaml existe en local"
+      stat:
+        path: "{{ secrets_file }}"
+      register: secrets_stat
+
+    - name: "[APP] Erreur si secrets.yaml introuvable"
+      fail:
+        msg: "Le fichier secrets.yaml est introuvable : {{ secrets_file }}"
+      when: not secrets_stat.stat.exists
+
+- name: Déployer sample-app via Helm
+  hosts: master
+  vars:
+    secrets_file: "{{ playbook_dir }}/../charts/sample-app/secrets.yaml"
+    release_name: app
+    app_namespace: sample-app
+    chart: "oci://ghcr.io/epitechmscpropromo2026/t-clo-902-nan_1/charts/sample-app"
+    chart_version: "0.1.0"
+    k8s_master_config: /etc/kubernetes/admin.conf
+
+  tasks:
+    - name: "[APP] Copier secrets.yaml sur le master"
+      copy:
+        src: "{{ secrets_file }}"
+        dest: /tmp/sample-app-secrets.yaml
+        mode: "0600"
+
+    - name: "[APP] Se connecter au registry GHCR pour Helm"
+      shell: |
+        set -euo pipefail
+        echo "{{ lookup('env', 'GITHUB_TOKEN') }}" | \
+          KUBECONFIG="{{ k8s_master_config }}" \
+          helm registry login ghcr.io \
+            --username "{{ lookup('env', 'GITHUB_USER') }}" \
+            --password-stdin
+      args:
+        executable: /bin/bash
+      when: lookup('env', 'GITHUB_TOKEN') != ''
+
+    - name: "[APP] Déployer sample-app via Helm"
+      shell: |
+        set -euo pipefail
+        KUBECONFIG="{{ k8s_master_config }}" \
+          helm upgrade --install {{ release_name }} {{ chart }} \
+          --version {{ chart_version }} \
+          --namespace {{ app_namespace }} \
+          --create-namespace \
+          -f /tmp/sample-app-secrets.yaml
+      args:
+        executable: /bin/bash
+
+    - name: "[APP] Vérifier le déploiement"
+      shell: |
+        KUBECONFIG="{{ k8s_master_config }}" \
+          kubectl rollout status deployment/{{ release_name }}-sample-app \
+          -n {{ app_namespace }} --timeout=120s
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    - name: "[APP] Supprimer secrets.yaml du master"
+      file:
+        path: /tmp/sample-app-secrets.yaml
+        state: absent

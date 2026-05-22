@@ -1,38 +1,21 @@
 {{- if .Values.httpRoute.enabled -}}
-{{- $fullName := include "sample-app.fullname" . -}}
-{{- $svcPort := .Values.service.port -}}
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
-  name: {{ $fullName }}
+  name: {{ include "sample-app.fullname" . }}
+  namespace: {{ .Release.Namespace }}
   labels:
     {{- include "sample-app.labels" . | nindent 4 }}
-  {{- with .Values.httpRoute.annotations }}
-  annotations:
-    {{- toYaml . | nindent 4 }}
-  {{- end }}
 spec:
   parentRefs:
-    {{- with .Values.httpRoute.parentRefs }}
-      {{- toYaml . | nindent 4 }}
-    {{- end }}
-  {{- with .Values.httpRoute.hostnames }}
-  hostnames:
-    {{- toYaml . | nindent 4 }}
-  {{- end }}
+    {{- toYaml .Values.httpRoute.parentRefs | nindent 4 }}
   rules:
-    {{- range .Values.httpRoute.rules }}
-    {{- with .matches }}
     - matches:
-      {{- toYaml . | nindent 8 }}
-    {{- end }}
-    {{- with .filters }}
-      filters:
-      {{- toYaml . | nindent 8 }}
-    {{- end }}
+        - path:
+            type: PathPrefix
+            value: /
       backendRefs:
-        - name: {{ $fullName }}
-          port: {{ $svcPort }}
-          weight: 1
-    {{- end }}
+        - name: {{ include "sample-app.fullname" . }}
+          port: {{ .Values.service.port }}
+          weight: 100
 {{- end }}

@@ -23,9 +23,14 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
     spec:
-      {{- with .Values.imagePullSecrets }}
+      {{- if or .Values.imagePullSecrets .Values.registry.dockerconfigjson }}
       imagePullSecrets:
+        {{- with .Values.imagePullSecrets }}
         {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- if .Values.registry.dockerconfigjson }}
+        - name: {{ include "sample-app.fullname" . }}-registry
+        {{- end }}
       {{- end }}
       serviceAccountName: {{ include "sample-app.serviceAccountName" . }}
       {{- with .Values.podSecurityContext }}
@@ -51,7 +56,7 @@ spec:
                   key: app-key
                   name: {{ include "sample-app.fullname" . }}-app-secrets
             - name: DB_HOST
-              value: {{ .Values.database.host | quote }}
+              value: {{ .Values.database.host | default (printf "%s-mysql" (include "sample-app.fullname" .)) | quote }}
             - name: DB_PORT
               value: "3306"
             - name: DB_DATABASE

@@ -1,17 +1,23 @@
 replicaCount: 2
 
 image:
-  repository: "ghcr.io/epitechmscpropromo2026/t-clo-902-nan_2/sample-app"
+  repository: "ghcr.io/epitechmscpropromo2026/t-clo-902-nan_1/sample-app"
   pullPolicy: IfNotPresent
   tag: "latest"
 
 imagePullSecrets: []
 
+registry:
+  dockerconfigjson: ""
+
 ingress:
   enabled: false
 
 httpRoute:
-  enabled: false
+  enabled: true
+  parentRefs:
+    - name: public-gateway
+      namespace: envoy-gateway-system
 
 service:
   type: ClusterIP
@@ -23,13 +29,15 @@ autoscaling:
 serviceAccount:
   create: true
 
+
 app:
   env: "production"
   debug: false
   key: ""
 
 database:
-  host: "t-clo-902-db-cluster"
+  host: ""
   name: "laravel"
   user: "sample_app_user"
   password: ""
+

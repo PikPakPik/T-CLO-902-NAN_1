@@ -3,7 +3,7 @@ name: Build Docker Image
 on:
   push:
     branches:
-      - '*'
+      - '**'
     paths:
       - 'resources/sample-app-master/Dockerfile'
       - 'resources/sample-app-master/**'
