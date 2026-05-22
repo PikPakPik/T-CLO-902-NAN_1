@@ -6,6 +6,7 @@
   vars:
     ansible_become: false
     values_sealed_file: "{{ playbook_dir }}/../charts/sample-app/values.sealed.yaml"
+    gitops_values_file: "{{ playbook_dir }}/../gitops/sample-app/values.yaml"
     registry_values_file: "{{ playbook_dir }}/../.tmp/registry-values.yaml"
   tasks:
     - name: "[APP] Vérifier que values.sealed.yaml existe"
@@ -19,6 +20,16 @@
           Le fichier values.sealed.yaml est introuvable : {{ values_sealed_file }}.
           Générez-le avec ./scripts/seal-sample-app-secrets.sh (voir docs/sealed-secrets.md).
       when: not values_sealed_stat.stat.exists
+
+    - name: "[APP] Vérifier que gitops/sample-app/values.yaml existe"
+      stat:
+        path: "{{ gitops_values_file }}"
+      register: gitops_values_stat
+
+    - name: "[APP] Erreur si gitops/sample-app/values.yaml introuvable"
+      fail:
+        msg: "Le fichier gitops/sample-app/values.yaml est introuvable : {{ gitops_values_file }}"
+      when: not gitops_values_stat.stat.exists
 
     - name: "[APP] Erreur si les credentials GHCR sont manquants"
       fail:
@@ -43,6 +54,7 @@
   hosts: master
   vars:
     values_sealed_file: "{{ playbook_dir }}/../charts/sample-app/values.sealed.yaml"
+    gitops_values_file: "{{ playbook_dir }}/../gitops/sample-app/values.yaml"
     registry_values_file: "{{ playbook_dir }}/../.tmp/registry-values.yaml"
     release_name: app
     app_namespace: sample-app
@@ -56,6 +68,12 @@
       copy:
         src: "{{ values_sealed_file }}"
         dest: /tmp/sample-app-values.sealed.yaml
+        mode: "0644"
+
+    - name: "[APP] Copier gitops/sample-app/values.yaml sur le master"
+      copy:
+        src: "{{ gitops_values_file }}"
+        dest: /tmp/sample-app-gitops-values.yaml
         mode: "0644"
 
     - name: "[APP] Copier registry-values.yaml sur le master"
@@ -84,6 +102,7 @@
           --namespace {{ app_namespace }} \
           --create-namespace \
           -f /tmp/sample-app-values.sealed.yaml \
+          -f /tmp/sample-app-gitops-values.yaml \
           -f /tmp/sample-app-registry-values.yaml
       args:
         executable: /bin/bash
@@ -120,4 +139,5 @@
         state: absent
       loop:
         - /tmp/sample-app-values.sealed.yaml
+        - /tmp/sample-app-gitops-values.yaml
         - /tmp/sample-app-registry-values.yaml

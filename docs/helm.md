@@ -48,7 +48,7 @@ Ansible génère automatiquement le secret registry à partir de ces variables.
 
 ## Déploiement automatisé (recommandé)
 
-Le déploiement complet est géré par Ansible depuis la racine du projet :
+Le déploiement complet est géré par Ansible (CI ou local). Voir `docs/gitops.md` pour le flux automatique.
 
 ```bash
 export GITHUB_USER="<github-username>"
@@ -64,12 +64,16 @@ Toutes les commandes sont à exécuter depuis la racine du projet sur le nœud m
 
 ### Vérifier la syntaxe
 ```bash
-helm lint charts/sample-app -f charts/sample-app/values.sealed.yaml
+helm lint charts/sample-app \
+  -f charts/sample-app/values.sealed.yaml \
+  -f gitops/sample-app/values.yaml
 ```
 
 ### Prévisualiser les fichiers YAML générés
 ```bash
-helm template app charts/sample-app -f charts/sample-app/values.sealed.yaml
+helm template app charts/sample-app \
+  -f charts/sample-app/values.sealed.yaml \
+  -f gitops/sample-app/values.yaml
 ```
 
 ### Déployer / mettre à jour l'application
@@ -77,6 +81,7 @@ helm template app charts/sample-app -f charts/sample-app/values.sealed.yaml
 helm upgrade --install app charts/sample-app \
   -n sample-app --create-namespace \
   -f charts/sample-app/values.sealed.yaml \
+  -f gitops/sample-app/values.yaml \
   -f registry-values.yaml
 ```
 

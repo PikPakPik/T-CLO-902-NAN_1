@@ -9,13 +9,15 @@ flowchart TD
     subgraph local[Machine locale]
         code[Modification du code\nou du chart Helm]
         sealed[values.sealed.yaml\nchiffré — versionné]
+        gitops[gitops/sample-app/values.yaml\nconfig déploiement]
         ghcr_env[GITHUB_USER / GITHUB_TOKEN\nvariables d'environnement]
     end
 
     subgraph github[GitHub]
         push[Push sur une branche]
         subgraph ci[GitHub Actions]
-            ci_docker[docker-build.yml\nBuild image Docker\nmulti-arch arm64/amd64]
+            ci_docker[docker-build.yml\nBuild image + update GitOps]
+            ci_deploy[deploy-sample-app.yml\nAnsible helm upgrade]
             ci_helm[publish-sample-app-chart.yml\nPackage et push\ndu chart Helm]
         end
     end
@@ -25,8 +27,8 @@ flowchart TD
         chart[Chart Helm OCI\ncharts/sample-app:0.1.0]
     end
 
-    subgraph ansible[Ansible — machine locale]
-        playbook[deploy_app.yml\nvalues.sealed.yaml + registry GHCR\nHelm upgrade --install]
+    subgraph ansible[Ansible — CI ou machine locale]
+        playbook[deploy_app.yml\nvalues.sealed + gitops + registry\nHelm upgrade --install]
     end
 
     subgraph cluster[Cluster Kubernetes — AWS]
@@ -44,12 +46,14 @@ flowchart TD
     code --> push
     push --> ci_docker --> img
     push --> ci_helm --> chart
-
-    dev --> |ansible-playbook| ansible
-    sealed --> ansible
-    ghcr_env --> ansible
-    chart --> |helm pull OCI| ansible
-    ansible --> helm_release
+    ci_docker --> gitops
+    gitops --> ci_deploy
+    ci_deploy --> playbook
+    dev --> |ansible-playbook manuel| playbook
+    chart --> |helm pull OCI| playbook
+    sealed --> playbook
+    ghcr_env --> playbook
+    playbook --> helm_release
     helm_release --> sealed_ctrl
     sealed_ctrl --> |Secret déchiffré| pods
     img --> |imagePull| app_pod
