@@ -1,10 +1,12 @@
 ---
 # Déploiement complet :
-#   connectivité → cluster → sealed-secrets → Gateway/Envoy → monitoring → Headlamp
+#   connectivité → cluster → sealed-secrets → Gateway/Envoy → sample-app → monitoring → Headlamp
 #
 #   ansible-playbook deploy_all.yml
 #
-# Tags : connectivity | cluster | sealed-secrets | gateway | monitoring | headlamp
+# Prérequis pour sample-app : GITHUB_USER et GITHUB_TOKEN exportés en local.
+#
+# Tags : connectivity | cluster | sealed-secrets | gateway | app | monitoring | headlamp
 
 - name: Vérifier la connectivité SSH
   ansible.builtin.import_playbook: test_connectivity.yml
@@ -25,6 +27,10 @@
 - name: Exposer le Gateway (nginx sur le master)
   ansible.builtin.import_playbook: deploy_gateway.yml
   tags: [gateway, gateway-deploy]
+
+- name: Déployer sample-app (Helm)
+  ansible.builtin.import_playbook: deploy_app.yml
+  tags: [app]
 
 - name: Déployer la stack monitoring
   ansible.builtin.import_playbook: deploy_monitoring.yml
