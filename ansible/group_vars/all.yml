@@ -32,6 +32,11 @@ monitoring_storage_class: local-path
 monitoring_prometheus_pvc_size: 20Gi
 monitoring_prometheus_retention: 15d
 
+# Hostnames nip.io (HTTPRoute dédié par service, path /)
+monitoring_nip_suffix: "{{ master_public_ip | replace('.', '-') }}.nip.io"
+monitoring_grafana_hostname: "grafana.{{ monitoring_nip_suffix }}"
+monitoring_prometheus_hostname: "prometheus.{{ monitoring_nip_suffix }}"
+
 master_public_ip: "{{ hostvars[groups['k8s_master'][0]].ansible_host }}"
 master_internal_ip: "{{ hostvars[groups['k8s_master'][0]].internal_ip }}"
 worker1_internal_ip: "{{ hostvars[groups['k8s_workers'][0]].ansible_host }}"
