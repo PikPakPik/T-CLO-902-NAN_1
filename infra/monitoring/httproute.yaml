@@ -9,23 +9,14 @@ metadata:
 spec:
   parentRefs:
     - name: public-gateway
-      namespace: envoy-gateway-system
+      namespace: traefik-system
+  hostnames:
+    - grafana.15-237-15-14.nip.io
   rules:
     - matches:
         - path:
-            type: Exact
-            value: /grafana
-      filters:
-        - type: RequestRedirect
-          requestRedirect:
-            path:
-              type: ReplaceFullPath
-              replaceFullPath: /grafana/
-            statusCode: 301
-    - matches:
-        - path:
             type: PathPrefix
-            value: /grafana/
+            value: /
       backendRefs:
         # Service créé par kube-prometheus-stack (release: kube-prometheus)
         - name: kube-prometheus-grafana
@@ -43,23 +34,14 @@ metadata:
 spec:
   parentRefs:
     - name: public-gateway
-      namespace: envoy-gateway-system
+      namespace: traefik-system
+  hostnames:
+    - prometheus.15-237-15-14.nip.io
   rules:
     - matches:
         - path:
-            type: Exact
-            value: /prometheus
-      filters:
-        - type: RequestRedirect
-          requestRedirect:
-            path:
-              type: ReplaceFullPath
-              replaceFullPath: /prometheus/
-            statusCode: 301
-    - matches:
-        - path:
             type: PathPrefix
-            value: /prometheus/
+            value: /
       backendRefs:
         - name: kube-prometheus-kube-prome-prometheus
           port: 9090
