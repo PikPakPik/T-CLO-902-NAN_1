@@ -24,7 +24,10 @@ service:
   port: 80
 
 autoscaling:
-  enabled: false
+  enabled: true
+  targetCPUUtilizationPercentage: 70
+  minReplicas: 2
+  maxReplicas: 5
 
 serviceAccount:
   create: true
