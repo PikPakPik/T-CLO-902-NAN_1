@@ -8,13 +8,16 @@ flowchart TD
 
     subgraph local[Machine locale]
         code[Modification du code\nou du chart Helm]
-        secrets[secrets.yaml\nnon commité]
+        sealed[values.sealed.yaml\nchiffré — versionné]
+        gitops[gitops/sample-app/values.yaml\nconfig déploiement]
+        ghcr_env[GITHUB_USER / GITHUB_TOKEN\nvariables d'environnement]
     end
 
     subgraph github[GitHub]
         push[Push sur une branche]
         subgraph ci[GitHub Actions]
-            ci_docker[docker-build.yml\nBuild image Docker\nmulti-arch arm64/amd64]
+            ci_docker[docker-build.yml\nBuild image + update GitOps]
+            ci_deploy[deploy-sample-app.yml\nAnsible helm upgrade]
             ci_helm[publish-sample-app-chart.yml\nPackage et push\ndu chart Helm]
         end
     end
@@ -24,12 +27,13 @@ flowchart TD
         chart[Chart Helm OCI\ncharts/sample-app:0.1.0]
     end
 
-    subgraph ansible[Ansible — machine locale]
-        playbook[deploy_app.yml\nCopie secrets.yaml\nHelm upgrade --install]
+    subgraph ansible[Ansible — CI ou machine locale]
+        playbook[deploy_app.yml\nvalues.sealed + gitops + registry\nHelm upgrade --install]
     end
 
     subgraph cluster[Cluster Kubernetes — AWS]
         helm_release[Release Helm : app\nNamespace : sample-app]
+        sealed_ctrl[Sealed Secrets Controller]
         subgraph pods[Pods]
             app_pod[Laravel app\n× 2 réplicas]
             mysql_pod[MySQL 8.0\n× 1]
@@ -42,11 +46,16 @@ flowchart TD
     code --> push
     push --> ci_docker --> img
     push --> ci_helm --> chart
-
-    dev --> |ansible-playbook| ansible
-    secrets --> ansible
-    chart --> |helm pull OCI| ansible
-    ansible --> helm_release
+    ci_docker --> gitops
+    gitops --> ci_deploy
+    ci_deploy --> playbook
+    dev --> |ansible-playbook manuel| playbook
+    chart --> |helm pull OCI| playbook
+    sealed --> playbook
+    ghcr_env --> playbook
+    playbook --> helm_release
+    helm_release --> sealed_ctrl
+    sealed_ctrl --> |Secret déchiffré| pods
     img --> |imagePull| app_pod
     helm_release --> pods
     helm_release --> migration
@@ -61,12 +70,14 @@ sequenceDiagram
     participant A as Ansible
     participant H as Helm
     participant K as Kubernetes
+    participant S as Sealed Secrets
     participant M as MySQL Pod
     participant J as Migration Job
     participant P as App Pods
 
     A->>H: helm upgrade --install app oci://...
-    H->>K: Créer Secret (APP_KEY, DB_PASSWORD)
+    H->>K: Créer SealedSecret (APP_KEY, DB_PASSWORD)
+    S->>K: Déchiffrer en Secret Kubernetes
     H->>K: Créer Secret registry GHCR
     H->>K: Créer PVC MySQL
     H->>K: Créer Deployment MySQL + Service

@@ -1,0 +1,55 @@
+---
+- name: "[SEALED-SECRETS] Ajouter le repo Helm {{ sealed_secrets_chart_repo_name }}"
+  ansible.builtin.command:
+    argv:
+      - helm
+      - repo
+      - add
+      - "{{ sealed_secrets_chart_repo_name }}"
+      - "{{ sealed_secrets_chart_repo_url }}"
+  register: sealed_secrets_helm_repo_add
+  failed_when: >-
+    sealed_secrets_helm_repo_add.rc != 0
+    and ('already exists' not in (sealed_secrets_helm_repo_add.stderr | default('')))
+  changed_when: "'already exists' not in (sealed_secrets_helm_repo_add.stderr | default(''))"
+
+- name: "[SEALED-SECRETS] Mettre à jour le cache des repos Helm"
+  ansible.builtin.command: helm repo update
+  changed_when: false
+
+- name: "[SEALED-SECRETS] Installer / mettre à jour le contrôleur via Helm"
+  kubernetes.core.helm:
+    kubeconfig: "{{ k8s_master_config }}"
+    name: "{{ sealed_secrets_release_name }}"
+    chart_ref: "{{ sealed_secrets_chart_ref }}"
+    chart_repo_url: "{{ sealed_secrets_chart_repo_url }}"
+    chart_version: "{{ sealed_secrets_chart_version }}"
+    release_namespace: "{{ sealed_secrets_controller_namespace }}"
+    create_namespace: false
+    update_repo_cache: false
+    wait: true
+    timeout: 3m
+    values:
+      fullnameOverride: sealed-secrets-controller
+
+- name: "[SEALED-SECRETS] Vérifier que le déploiement est disponible"
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ k8s_master_config }}"
+    api_version: apps/v1
+    kind: Deployment
+    namespace: "{{ sealed_secrets_controller_namespace }}"
+    label_selectors:
+      - app.kubernetes.io/name=sealed-secrets
+  register: sealed_secrets_deployments
+  changed_when: false
+
+- name: "[SEALED-SECRETS] Afficher l'état du contrôleur"
+  ansible.builtin.debug:
+    msg: >-
+      {{
+        sealed_secrets_deployments.resources
+        | map(attribute='metadata.name')
+        | list
+        | join(', ')
+      }}
+  when: sealed_secrets_deployments.resources | length > 0

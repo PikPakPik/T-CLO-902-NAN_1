@@ -41,3 +41,9 @@ database:
   user: "sample_app_user"
   password: ""
 
+secrets:
+  useSealedSecrets: false
+  scope: "strict"
+  encryptedData:
+    appKey: ""
+    dbPassword: ""

@@ -19,12 +19,12 @@ flowchart LR
 
     subgraph rbac[RBAC]
         crb[ClusterRoleBinding\nheadlamp-admin]
-        cr[ClusterRole\ncluster-admin]
+        cr[ClusterRole\nheadlamp-viewer]
         crb --> cr
     end
 
     sa --> crb
-    cr -->|accès complet| api[Kubernetes API Server]
+    cr -->|get/list/watch + secrets/events| api[Kubernetes API Server]
 ```
 
 ## Déploiement
@@ -74,9 +74,17 @@ sudo KUBECONFIG=/etc/kubernetes/admin.conf kubectl get httproute,pods,svc,endpoi
 
 Le `ClusterRoleBinding` attache le ServiceAccount `headlamp-admin` au `ClusterRole` dédié **`headlamp-viewer`** (défini dans `infra/headlamp/clusterrole.yaml`).
 
-Ce rôle accorde uniquement `get/list/watch` sur les ressources nécessaires à l’affichage dans Headlamp : workloads (pods, deployments, daemonsets, statefulsets…), services, namespaces, nœuds, RBAC, ingresses, stockage, etc. **Aucune écriture n’est autorisée.**
+Ce rôle accorde principalement `get/list/watch` sur les ressources nécessaires à l’affichage : workloads, services, namespaces, nœuds, RBAC, ingresses, Gateway API, stockage, métriques, etc.
 
-> Note : les `Secrets` sont volontairement exclus — Headlamp n’en a pas besoin pour visualiser le cluster, et les exposer via une UI web serait un vecteur de risque inutile.
+Exceptions pour l’usage courant dans l’UI :
+
+| Ressource | Verbes | Usage |
+| --------- | ------ | ----- |
+| `secrets` | `get`, `list`, `watch` | Afficher les clés (ex. `APP_KEY` dans `app-sample-app-app-secrets`) |
+| `events` | `get`, `list`, `watch`, `delete`, `deletecollection` | Supprimer des events (y compris en masse) |
+| `pods/log` | `get`, `list`, `watch` | Consulter les logs des pods |
+
+> Les secrets restent en **lecture seule** (pas de `create`/`update`/`delete`). Après modification du `ClusterRole`, régénère le token Headlamp (voir ci-dessous) pour que les nouvelles permissions s’appliquent.
 
 ## Authentification
 

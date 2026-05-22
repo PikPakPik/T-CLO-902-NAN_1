@@ -12,7 +12,7 @@
   hosts: k8s_master
   gather_facts: yes
   become: yes
-  tags: master
+  tags: [master, cluster]
 
   roles:
     - k8s_master
