@@ -64,12 +64,6 @@
     mode: "0644"
     directory_mode: "0755"
 
-- name: "[HEADLAMP] Générer le ClusterRole (Gateway API depuis group_vars/all.yml)"
-  ansible.builtin.template:
-    src: clusterrole.yaml.j2
-    dest: /tmp/kubequest/infra/headlamp/clusterrole.yaml
-    mode: "0644"
-
 - name: "[HEADLAMP] Supprimer le ClusterRoleBinding existant (roleRef immuable)"
   kubernetes.core.k8s:
     kubeconfig: "{{ k8s_master_config }}"
