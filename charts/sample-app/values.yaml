@@ -29,9 +29,16 @@ autoscaling:
   minReplicas: 2
   maxReplicas: 5
 
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
 serviceAccount:
   create: true
-
 
 app:
   env: "production"

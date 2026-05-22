@@ -6,7 +6,7 @@
 #
 # Prérequis pour sample-app : GITHUB_USER et GITHUB_TOKEN exportés en local.
 #
-# Tags : connectivity | cluster | sealed-secrets | gateway | app | monitoring | headlamp
+# Tags : connectivity | cluster | metrics-server | sealed-secrets | gateway | app | monitoring | headlamp
 
 - name: Vérifier la connectivité SSH
   ansible.builtin.import_playbook: test_connectivity.yml
@@ -15,6 +15,10 @@
 - name: Installer le cluster Kubernetes
   ansible.builtin.import_playbook: setup_cluster_playbook.yml
   tags: [cluster]
+
+- name: Installer metrics-server
+  ansible.builtin.import_playbook: deploy_metrics_server.yml
+  tags: [metrics-server, cluster]
 
 - name: Déployer Sealed Secrets
   ansible.builtin.import_playbook: deploy_sealed_secrets.yml

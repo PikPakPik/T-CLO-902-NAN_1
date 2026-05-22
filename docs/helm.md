@@ -105,3 +105,24 @@ helm upgrade --install app \
 helm ls -n sample-app
 helm uninstall app -n sample-app
 ```
+
+## Autoscaling (HPA)
+
+Le chart peut déployer un HorizontalPodAutoscaler si `autoscaling.enabled: true`. Prérequis sur le cluster :
+
+1. **metrics-server** — installé par Ansible (`deploy_metrics_server.yml`, inclus dans `deploy_all.yml`). Sans lui, le HPA affiche `cpu: <unknown>/70%`.
+2. **CPU requests** sur les pods de l'app — définis via `resources.requests.cpu` dans les values (nécessaire pour calculer le pourcentage CPU).
+
+Vérification :
+
+```bash
+kubectl top pods -n sample-app
+kubectl get hpa -n sample-app
+kubectl describe hpa app-sample-app -n sample-app
+```
+
+Installation manuelle de metrics-server (si besoin) :
+
+```bash
+ansible-playbook -i ansible/inventory.yml ansible/deploy_metrics_server.yml
+```
