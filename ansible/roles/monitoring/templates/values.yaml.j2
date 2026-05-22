@@ -3,6 +3,13 @@
 grafana:
   enabled: true
   adminPassword: "{{ grafana_admin_password }}"
+  initChownData:
+    enabled: false
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 472
+    runAsGroup: 472
+    fsGroup: 472
   grafana.ini:
     server:
       root_url: "%(protocol)s://%(domain)s:%(http_port)s/grafana/"
