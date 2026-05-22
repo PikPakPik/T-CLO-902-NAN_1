@@ -52,8 +52,6 @@
     values:
       clusterRoleBinding:
         create: false
-      config:
-        baseURL: /headlamp
       nodeSelector:
         kubernetes.io/hostname: "{{ headlamp_target_node_name }}"
 
