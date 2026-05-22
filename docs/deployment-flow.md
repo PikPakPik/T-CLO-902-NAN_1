@@ -8,7 +8,8 @@ flowchart TD
 
     subgraph local[Machine locale]
         code[Modification du code\nou du chart Helm]
-        secrets[secrets.yaml\nnon commité]
+        sealed[values.sealed.yaml\nchiffré — versionné]
+        ghcr_env[GITHUB_USER / GITHUB_TOKEN\nvariables d'environnement]
     end
 
     subgraph github[GitHub]
@@ -25,11 +26,12 @@ flowchart TD
     end
 
     subgraph ansible[Ansible — machine locale]
-        playbook[deploy_app.yml\nCopie secrets.yaml\nHelm upgrade --install]
+        playbook[deploy_app.yml\nvalues.sealed.yaml + registry GHCR\nHelm upgrade --install]
     end
 
     subgraph cluster[Cluster Kubernetes — AWS]
         helm_release[Release Helm : app\nNamespace : sample-app]
+        sealed_ctrl[Sealed Secrets Controller]
         subgraph pods[Pods]
             app_pod[Laravel app\n× 2 réplicas]
             mysql_pod[MySQL 8.0\n× 1]
@@ -44,9 +46,12 @@ flowchart TD
     push --> ci_helm --> chart
 
     dev --> |ansible-playbook| ansible
-    secrets --> ansible
+    sealed --> ansible
+    ghcr_env --> ansible
     chart --> |helm pull OCI| ansible
     ansible --> helm_release
+    helm_release --> sealed_ctrl
+    sealed_ctrl --> |Secret déchiffré| pods
     img --> |imagePull| app_pod
     helm_release --> pods
     helm_release --> migration
@@ -61,12 +66,14 @@ sequenceDiagram
     participant A as Ansible
     participant H as Helm
     participant K as Kubernetes
+    participant S as Sealed Secrets
     participant M as MySQL Pod
     participant J as Migration Job
     participant P as App Pods
 
     A->>H: helm upgrade --install app oci://...
-    H->>K: Créer Secret (APP_KEY, DB_PASSWORD)
+    H->>K: Créer SealedSecret (APP_KEY, DB_PASSWORD)
+    S->>K: Déchiffrer en Secret Kubernetes
     H->>K: Créer Secret registry GHCR
     H->>K: Créer PVC MySQL
     H->>K: Créer Deployment MySQL + Service

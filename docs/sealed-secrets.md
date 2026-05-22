@@ -46,7 +46,7 @@ kubeseal \
 
 ## 4) Générer un SealedSecret pour le chart Helm
 
-Le secret doit porter le **même nom** et le **même namespace** que ceux rendus par Helm (mode `strict`). Pour la release `my-laravel-app` dans le namespace `sample-app`, le nom est `my-laravel-app-sample-app-app-secrets`.
+Le secret doit porter le **même nom** et le **même namespace** que ceux rendus par Helm (mode `strict`). Pour la release `app` dans le namespace `sample-app`, le nom est `app-sample-app-app-secrets`.
 
 Méthode recommandée : script à la racine du dépôt :
 
@@ -61,7 +61,7 @@ Cela crée `charts/sample-app/values.sealed.yaml` (données chiffrées — prêt
 À la main :
 
 ```bash
-kubectl create secret generic my-laravel-app-sample-app-app-secrets \
+kubectl create secret generic app-sample-app-app-secrets \
   --from-literal=app-key='base64:…' \
   --from-literal=db-password='…' \
   -n sample-app \
@@ -82,8 +82,18 @@ secrets:
 
 ## 5) Déployer l'application en mode Sealed Secrets
 
+Via Ansible (recommandé) :
+
 ```bash
-helm upgrade --install my-laravel-app charts/sample-app -n sample-app -f charts/sample-app/values.sealed.yaml
+export GITHUB_USER="<github-username>"
+export GITHUB_TOKEN="<github-token>"
+ansible-playbook -i ansible/inventory.yml ansible/deploy_app.yml
+```
+
+Manuellement :
+
+```bash
+helm upgrade --install app charts/sample-app -n sample-app -f charts/sample-app/values.sealed.yaml
 ```
 
 Le chart va créer une ressource `SealedSecret` (`bitnami.com/v1alpha1`) qui sera déchiffrée automatiquement dans le cluster.

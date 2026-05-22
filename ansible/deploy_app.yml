@@ -5,33 +5,63 @@
   gather_facts: false
   vars:
     ansible_become: false
-    secrets_file: "{{ playbook_dir }}/../charts/sample-app/secrets.yaml"
+    values_sealed_file: "{{ playbook_dir }}/../charts/sample-app/values.sealed.yaml"
+    registry_values_file: "{{ playbook_dir }}/../.tmp/registry-values.yaml"
   tasks:
-    - name: "[APP] Vérifier que le fichier secrets.yaml existe en local"
+    - name: "[APP] Vérifier que values.sealed.yaml existe"
       stat:
-        path: "{{ secrets_file }}"
-      register: secrets_stat
+        path: "{{ values_sealed_file }}"
+      register: values_sealed_stat
 
-    - name: "[APP] Erreur si secrets.yaml introuvable"
+    - name: "[APP] Erreur si values.sealed.yaml introuvable"
       fail:
-        msg: "Le fichier secrets.yaml est introuvable : {{ secrets_file }}"
-      when: not secrets_stat.stat.exists
+        msg: >-
+          Le fichier values.sealed.yaml est introuvable : {{ values_sealed_file }}.
+          Générez-le avec ./scripts/seal-sample-app-secrets.sh (voir docs/sealed-secrets.md).
+      when: not values_sealed_stat.stat.exists
+
+    - name: "[APP] Erreur si les credentials GHCR sont manquants"
+      fail:
+        msg: "GITHUB_USER et GITHUB_TOKEN doivent être définis pour le pull d'images GHCR."
+      when: lookup('env', 'GITHUB_TOKEN') == '' or lookup('env', 'GITHUB_USER') == ''
+
+    - name: "[APP] Générer registry-values.yaml depuis les credentials GHCR"
+      shell: |
+        set -euo pipefail
+        AUTH=$(printf '%s:%s' "${GITHUB_USER}" "${GITHUB_TOKEN}" | base64 | tr -d '\n')
+        CONFIG=$(printf '{"auths":{"ghcr.io":{"auth":"%s"}}}' "$AUTH" | base64 | tr -d '\n')
+        mkdir -p "$(dirname "${REGISTRY_VALUES_FILE}")"
+        printf 'registry:\n  dockerconfigjson: "%s"\n' "$CONFIG" > "${REGISTRY_VALUES_FILE}"
+      args:
+        executable: /bin/bash
+      environment:
+        GITHUB_USER: "{{ lookup('env', 'GITHUB_USER') }}"
+        GITHUB_TOKEN: "{{ lookup('env', 'GITHUB_TOKEN') }}"
+        REGISTRY_VALUES_FILE: "{{ registry_values_file }}"
 
 - name: Déployer sample-app via Helm
   hosts: master
   vars:
-    secrets_file: "{{ playbook_dir }}/../charts/sample-app/secrets.yaml"
+    values_sealed_file: "{{ playbook_dir }}/../charts/sample-app/values.sealed.yaml"
+    registry_values_file: "{{ playbook_dir }}/../.tmp/registry-values.yaml"
     release_name: app
     app_namespace: sample-app
     chart: "oci://ghcr.io/epitechmscpropromo2026/t-clo-902-nan_1/charts/sample-app"
     chart_version: "0.1.0"
     k8s_master_config: /etc/kubernetes/admin.conf
+    app_secret_name: "{{ release_name }}-sample-app-app-secrets"
 
   tasks:
-    - name: "[APP] Copier secrets.yaml sur le master"
+    - name: "[APP] Copier values.sealed.yaml sur le master"
       copy:
-        src: "{{ secrets_file }}"
-        dest: /tmp/sample-app-secrets.yaml
+        src: "{{ values_sealed_file }}"
+        dest: /tmp/sample-app-values.sealed.yaml
+        mode: "0644"
+
+    - name: "[APP] Copier registry-values.yaml sur le master"
+      copy:
+        src: "{{ registry_values_file }}"
+        dest: /tmp/sample-app-registry-values.yaml
         mode: "0600"
 
     - name: "[APP] Se connecter au registry GHCR pour Helm"
@@ -44,7 +74,6 @@
             --password-stdin
       args:
         executable: /bin/bash
-      when: lookup('env', 'GITHUB_TOKEN') != ''
 
     - name: "[APP] Déployer sample-app via Helm"
       shell: |
@@ -54,9 +83,27 @@
           --version {{ chart_version }} \
           --namespace {{ app_namespace }} \
           --create-namespace \
-          -f /tmp/sample-app-secrets.yaml
+          -f /tmp/sample-app-values.sealed.yaml \
+          -f /tmp/sample-app-registry-values.yaml
       args:
         executable: /bin/bash
+
+    - name: "[APP] Attendre le déchiffrement du SealedSecret"
+      shell: |
+        set -euo pipefail
+        for _ in $(seq 1 30); do
+          if KUBECONFIG="{{ k8s_master_config }}" \
+            kubectl get secret {{ app_secret_name }} -n {{ app_namespace }} >/dev/null 2>&1; then
+            exit 0
+          fi
+          sleep 2
+        done
+        KUBECONFIG="{{ k8s_master_config }}" \
+          kubectl describe sealedsecret {{ app_secret_name }} -n {{ app_namespace }}
+        exit 1
+      args:
+        executable: /bin/bash
+      changed_when: false
 
     - name: "[APP] Vérifier le déploiement"
       shell: |
@@ -67,7 +114,10 @@
         executable: /bin/bash
       changed_when: false
 
-    - name: "[APP] Supprimer secrets.yaml du master"
+    - name: "[APP] Supprimer les fichiers de values temporaires du master"
       file:
-        path: /tmp/sample-app-secrets.yaml
+        path: "{{ item }}"
         state: absent
+      loop:
+        - /tmp/sample-app-values.sealed.yaml
+        - /tmp/sample-app-registry-values.yaml

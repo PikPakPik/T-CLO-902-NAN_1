@@ -8,59 +8,51 @@ Dans ce projet, Helm sert à déployer l'application Laravel et sa base de donn�
 ## Structure du Chart (`charts/sample-app/`)
 - `Chart.yaml` : Informations générales du chart (nom, version).
 - `values.yaml` : Fichier de variables (réplicas, image Docker, identifiants BDD).
-- `secrets.example.yaml` : Exemple de fichier de secrets à remplir.
+- `values.sealed.yaml` : Secrets applicatifs chiffrés (APP_KEY, mot de passe BDD) — versionné dans Git.
+- `sealed-secrets.example.yaml` : Exemple de structure pour `values.sealed.yaml`.
 - `templates/` : Fichiers YAML déployés sur Kubernetes :
   - `deployment.yaml` : Déploiement de l'application Laravel (2 réplicas).
   - `mysql.yaml` : Déploiement MySQL + Service + PersistentVolumeClaim.
   - `migration-job.yaml` : Job de migration BDD exécuté après installation/mise à jour (Helm Hook post-install/post-upgrade).
-  - `secrets.yaml` : Secret Kubernetes contenant APP_KEY et le mot de passe BDD.
+  - `sealedsecret.yaml` : SealedSecret contenant APP_KEY et le mot de passe BDD (mode recommandé).
+  - `secrets.yaml` : Secret Kubernetes en clair (mode legacy, désactivé par défaut).
   - `registry-secret.yaml` : Secret pour l'authentification au registry GHCR.
   - `httproute.yaml` : HTTPRoute Gateway API pour exposer l'app via Envoy Gateway.
 
-> ⚠️ **Important** : Deux modes sont disponibles pour les secrets :
-> - mode classique (`Secret`) via `secrets.example.yaml` ;
-> - mode sécurisé (`SealedSecret`) avec `kubeseal` (recommandé), voir `docs/sealed-secrets.md`.
+> Les secrets applicatifs passent par **Sealed Secrets** (`values.sealed.yaml`). Les credentials GHCR pour le pull d'image sont injectés au déploiement via `GITHUB_USER` / `GITHUB_TOKEN`. Voir `docs/sealed-secrets.md`.
 
-## Préparer le fichier secrets.yaml
+## Préparer les secrets
 
-### Générer le `registry.dockerconfigjson`
+### 1. Secrets applicatifs (APP_KEY, mot de passe BDD)
 
-Ce champ contient les credentials base64 pour puller l'image depuis GHCR. Le token GitHub doit avoir le scope `read:packages`.
+Générer `values.sealed.yaml` avec le script :
 
-Ces commandes s'exécutent **en local**, aucune connexion SSH ni accès au cluster n'est nécessaire.
-
-**Avec kubectl (recommandé) :**
 ```bash
-kubectl create secret docker-registry ghcr-secret \
-  --docker-server=ghcr.io \
-  --docker-username=<github-username> \
-  --docker-password=<github-token> \
-  --dry-run=client -o jsonpath='{.data.\.dockerconfigjson}'
+export APP_KEY='base64:…'   # ex. php artisan key:generate --show
+export DB_PASSWORD='…'      # identique au mot de passe utilisateur BDD
+./scripts/seal-sample-app-secrets.sh
 ```
 
-**Sans kubectl (avec base64 uniquement) :**
+Commiter `charts/sample-app/values.sealed.yaml` (données chiffrées, safe pour Git).
+
+### 2. Credentials GHCR (pull d'image)
+
+Le token GitHub doit avoir le scope `read:packages`. Exporter les variables avant le déploiement Ansible :
+
 ```bash
-echo -n '{"auths":{"ghcr.io":{"auth":"'$(echo -n "<github-username>:<github-token>" | base64 -w 0)'"}}}' | base64 -w 0
+export GITHUB_USER="<github-username>"
+export GITHUB_TOKEN="<github-token>"
 ```
 
-Coller la valeur retournée dans `secrets.yaml` :
-
-```yaml
-registry:
-  dockerconfigjson: "<valeur générée ci-dessus>"
-
-app:
-  key: "<laravel-app-key>"   # base64:... généré avec php artisan key:generate
-
-database:
-  password: "<mot-de-passe-mysql>"
-```
+Ansible génère automatiquement le secret registry à partir de ces variables.
 
 ## Déploiement automatisé (recommandé)
 
 Le déploiement complet est géré par Ansible depuis la racine du projet :
 
 ```bash
+export GITHUB_USER="<github-username>"
+export GITHUB_TOKEN="<github-token>"
 ansible-playbook -i ansible/inventory.yml ansible/deploy_app.yml
 ```
 
@@ -72,28 +64,32 @@ Toutes les commandes sont à exécuter depuis la racine du projet sur le nœud m
 
 ### Vérifier la syntaxe
 ```bash
-helm lint charts/sample-app -f charts/sample-app/secrets.yaml
+helm lint charts/sample-app -f charts/sample-app/values.sealed.yaml
 ```
 
 ### Prévisualiser les fichiers YAML générés
 ```bash
-helm template app charts/sample-app -f charts/sample-app/secrets.yaml
+helm template app charts/sample-app -f charts/sample-app/values.sealed.yaml
 ```
 
 ### Déployer / mettre à jour l'application
 ```bash
 helm upgrade --install app charts/sample-app \
   -n sample-app --create-namespace \
-  -f charts/sample-app/secrets.yaml
+  -f charts/sample-app/values.sealed.yaml \
+  -f registry-values.yaml
 ```
 
-### Mettre à jour l'application
+> Pour un déploiement manuel, générez `registry-values.yaml` avec les credentials GHCR (voir `docs/sealed-secrets.md`).
+
+### Mettre à jour l'application depuis GHCR
 ```bash
 helm upgrade --install app \
   oci://ghcr.io/epitechmscpropromo2026/t-clo-902-nan_1/charts/sample-app \
   --version 0.1.0 \
   -n sample-app --create-namespace \
-  -f secrets.yaml
+  -f charts/sample-app/values.sealed.yaml \
+  -f registry-values.yaml
 ```
 
 ### Lister et supprimer les déploiements
