@@ -23,14 +23,9 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
     spec:
-      {{- if or .Values.imagePullSecrets .Values.registry.dockerconfigjson }}
+      {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
-        {{- with .Values.imagePullSecrets }}
         {{- toYaml . | nindent 8 }}
-        {{- end }}
-        {{- if .Values.registry.dockerconfigjson }}
-        - name: {{ include "sample-app.fullname" . }}-registry
-        {{- end }}
       {{- end }}
       serviceAccountName: {{ include "sample-app.serviceAccountName" . }}
       {{- with .Values.podSecurityContext }}

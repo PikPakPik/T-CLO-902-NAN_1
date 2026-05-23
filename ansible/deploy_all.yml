@@ -4,7 +4,7 @@
 #
 #   ansible-playbook deploy_all.yml
 #
-# Prérequis pour sample-app : GITHUB_USER et GITHUB_TOKEN exportés en local.
+# Prérequis pour sample-app (une seule fois) : GITHUB_USER + GITHUB_TOKEN pour créer ghcr-registry.
 #
 # Tags : connectivity | cluster | metrics-server | sealed-secrets | gateway | app | monitoring | headlamp
 
