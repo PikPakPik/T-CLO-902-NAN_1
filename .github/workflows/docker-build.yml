@@ -3,7 +3,7 @@ name: Build Docker Image
 on:
   push:
     branches:
-      - '*'
+      - '**'
     paths:
       - 'resources/sample-app-master/Dockerfile'
       - 'resources/sample-app-master/**'
@@ -77,3 +77,44 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.tag.outputs.rollback_tag }}
+
+  update-gitops:
+    name: Update GitOps values
+    runs-on: self-hosted
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          ref: main
+
+      - name: Update gitops/sample-app/values.yaml
+        run: |
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-12)
+          {
+            echo "# Values de déploiement — source de vérité GitOps (sans ArgoCD)."
+            echo "# Mis à jour automatiquement par la CI après chaque build Docker sur main."
+            echo ""
+            echo "image:"
+            echo "  tag: latest"
+            echo "  pullPolicy: Always"
+            echo ""
+            echo "podAnnotations:"
+            echo "  kubequest.io/git-sha: \"${SHORT_SHA}\""
+          } > gitops/sample-app/values.yaml
+
+      - name: Commit and push GitOps values
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add gitops/sample-app/values.yaml
+          if git diff --staged --quiet; then
+            echo "Aucun changement GitOps à committer."
+            exit 0
+          fi
+          git commit -m "chore(gitops): deploy sample-app ${GITHUB_SHA:0:12}"
+          git push

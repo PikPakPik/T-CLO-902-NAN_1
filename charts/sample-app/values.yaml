@@ -1,24 +1,40 @@
 replicaCount: 2
 
 image:
-  repository: "ghcr.io/epitechmscpropromo2026/t-clo-902-nan_2/sample-app"
+  repository: "ghcr.io/epitechmscpropromo2026/t-clo-902-nan_1/sample-app"
   pullPolicy: IfNotPresent
   tag: "latest"
 
-imagePullSecrets: []
+imagePullSecrets:
+  - name: ghcr-registry
 
 ingress:
   enabled: false
 
 httpRoute:
-  enabled: false
+  enabled: true
+  publicAddress: ""
+  parentRefs:
+    - name: public-gateway
+      namespace: traefik-system
 
 service:
   type: ClusterIP
   port: 80
 
 autoscaling:
-  enabled: false
+  enabled: true
+  targetCPUUtilizationPercentage: 70
+  minReplicas: 2
+  maxReplicas: 5
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
 
 serviceAccount:
   create: true
@@ -29,7 +45,19 @@ app:
   key: ""
 
 database:
-  host: "t-clo-902-db-cluster"
+  host: ""
   name: "laravel"
   user: "sample_app_user"
   password: ""
+  backup:
+    enabled: true
+    schedule: "0 2 * * *"
+    retentionDays: 7
+    storage: 5Gi
+
+secrets:
+  useSealedSecrets: false
+  scope: "strict"
+  encryptedData:
+    appKey: ""
+    dbPassword: ""

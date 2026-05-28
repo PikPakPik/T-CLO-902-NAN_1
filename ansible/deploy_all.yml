@@ -1,10 +1,12 @@
 ---
-# Déploiement complet : connectivité → cluster (+ pip kubernetes/helm sur le master)
-# → Gateway/Envoy → monitoring → Headlamp
+# Déploiement complet :
+#   connectivité → cluster → sealed-secrets → Gateway/Envoy → sample-app → monitoring → Headlamp
 #
 #   ansible-playbook deploy_all.yml
 #
-# Tags : connectivity | cluster | gateway | monitoring | headlamp
+# Prérequis pour sample-app (une seule fois) : GITHUB_USER + GITHUB_TOKEN pour créer ghcr-registry.
+#
+# Tags : connectivity | cluster | metrics-server | sealed-secrets | gateway | app | monitoring | headlamp
 
 - name: Vérifier la connectivité SSH
   ansible.builtin.import_playbook: test_connectivity.yml
@@ -14,6 +16,14 @@
   ansible.builtin.import_playbook: setup_cluster_playbook.yml
   tags: [cluster]
 
+- name: Installer metrics-server
+  ansible.builtin.import_playbook: deploy_metrics_server.yml
+  tags: [metrics-server, cluster]
+
+- name: Déployer Sealed Secrets
+  ansible.builtin.import_playbook: deploy_sealed_secrets.yml
+  tags: [sealed-secrets]
+
 - name: Installer Gateway API et Envoy Gateway
   ansible.builtin.import_playbook: install_gateway-api.yml
   tags: [gateway, gateway-install]
@@ -21,6 +31,10 @@
 - name: Exposer le Gateway (nginx sur le master)
   ansible.builtin.import_playbook: deploy_gateway.yml
   tags: [gateway, gateway-deploy]
+
+- name: Déployer sample-app (Helm)
+  ansible.builtin.import_playbook: deploy_app.yml
+  tags: [app]
 
 - name: Déployer la stack monitoring
   ansible.builtin.import_playbook: deploy_monitoring.yml

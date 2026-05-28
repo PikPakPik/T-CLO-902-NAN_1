@@ -1,0 +1,23 @@
+# Values de déploiement — source de vérité GitOps (sans ArgoCD).
+# Mis à jour automatiquement par la CI après chaque build Docker sur main.
+
+image:
+  tag: latest
+  pullPolicy: Always
+
+podAnnotations:
+  kubequest.io/git-sha: "manual"
+
+autoscaling:
+  enabled: true
+  targetCPUUtilizationPercentage: 70
+  minReplicas: 2
+  maxReplicas: 5
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi

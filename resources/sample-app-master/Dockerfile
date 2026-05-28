@@ -28,6 +28,9 @@ COPY ./nginx.conf /etc/nginx/nginx.conf
 COPY ./supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 COPY --from=builder /var/www/html /var/www/html
 
+RUN chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache \
+    && chmod -R 775 /var/www/html/storage /var/www/html/bootstrap/cache
+
 # Échec volontaire du Deployment (CMD) ; le hook Helm `migrate` garde son propre command → pratique avec `helm upgrade --wait --atomic`.
 FROM runtime AS rollback-demo
 CMD ["/bin/sh", "-c", "exit 1"]

@@ -51,7 +51,7 @@ spec:
                   key: app-key
                   name: {{ include "sample-app.fullname" . }}-app-secrets
             - name: DB_HOST
-              value: {{ .Values.database.host | quote }}
+              value: {{ .Values.database.host | default (printf "%s-mysql" (include "sample-app.fullname" .)) | quote }}
             - name: DB_PORT
               value: "3306"
             - name: DB_DATABASE

@@ -3,10 +3,13 @@
 grafana:
   enabled: true
   adminPassword: "{{ grafana_admin_password }}"
-  # Désactivé : le PVC existant a déjà les bonnes permissions ; init-chown-data
-  # échoue au upgrade (Permission denied sur png/csv/pdf) et bloque Helm en timeout.
   initChownData:
     enabled: false
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 472
+    runAsGroup: 472
+    fsGroup: 472
   grafana.ini:
     server:
       # Sous-domaine dédié (path /) : root_url explicite, pas de sub-path.

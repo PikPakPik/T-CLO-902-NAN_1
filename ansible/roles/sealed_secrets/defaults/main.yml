@@ -1,0 +1,5 @@
+---
+sealed_secrets_release_name: sealed-secrets
+sealed_secrets_chart_ref: sealed-secrets
+sealed_secrets_chart_repo_name: sealed-secrets
+sealed_secrets_chart_repo_url: https://bitnami-labs.github.io/sealed-secrets

@@ -1,0 +1,43 @@
+name: Deploy sample-app
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'gitops/sample-app/**'
+      - 'charts/sample-app/**'
+      - 'ansible/deploy_app.yml'
+      - '.github/workflows/deploy-sample-app.yml'
+
+jobs:
+  deploy:
+    name: Deploy via Ansible
+    runs-on: self-hosted
+    environment: deployment
+    permissions:
+      contents: read
+      packages: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Ansible
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ansible
+
+      - name: Set up SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/kubequest.pem
+          chmod 600 ~/.ssh/kubequest.pem
+
+      - name: Deploy sample-app
+        run: ansible-playbook -i ansible/inventory.yml ansible/deploy_app.yml
+        env:
+          ANSIBLE_CONFIG: ansible/ansible.cfg
+          GITHUB_USER: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
