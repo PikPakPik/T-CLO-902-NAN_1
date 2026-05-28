@@ -1,9 +1,0 @@
----
-- name: Install Gateway API and Envoy Gateway
-  hosts: k8s_master
-  become: yes
-
-  tasks:
-    - ansible.builtin.import_role:
-        name: envoy-gateway
-        tasks_from: install
