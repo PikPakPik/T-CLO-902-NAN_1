@@ -5,19 +5,18 @@ image:
   pullPolicy: IfNotPresent
   tag: "latest"
 
-imagePullSecrets: []
-
-registry:
-  dockerconfigjson: ""
+imagePullSecrets:
+  - name: ghcr-registry
 
 ingress:
   enabled: false
 
 httpRoute:
   enabled: true
+  publicAddress: ""
   parentRefs:
     - name: public-gateway
-      namespace: envoy-gateway-system
+      namespace: traefik-system
 
 service:
   type: ClusterIP

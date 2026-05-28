@@ -7,7 +7,6 @@
     ansible_become: false
     values_sealed_file: "{{ playbook_dir }}/../charts/sample-app/values.sealed.yaml"
     gitops_values_file: "{{ playbook_dir }}/../gitops/sample-app/values.yaml"
-    registry_values_file: "{{ playbook_dir }}/../.tmp/registry-values.yaml"
   tasks:
     - name: "[APP] Vérifier que values.sealed.yaml existe"
       stat:
@@ -31,84 +30,95 @@
         msg: "Le fichier gitops/sample-app/values.yaml est introuvable : {{ gitops_values_file }}"
       when: not gitops_values_stat.stat.exists
 
-    - name: "[APP] Erreur si les credentials GHCR sont manquants"
-      fail:
-        msg: "GITHUB_USER et GITHUB_TOKEN doivent être définis pour le pull d'images GHCR."
-      when: lookup('env', 'GITHUB_TOKEN') == '' or lookup('env', 'GITHUB_USER') == ''
-
-    - name: "[APP] Générer registry-values.yaml depuis les credentials GHCR"
-      shell: |
-        set -euo pipefail
-        AUTH=$(printf '%s:%s' "${GITHUB_USER}" "${GITHUB_TOKEN}" | base64 | tr -d '\n')
-        CONFIG=$(printf '{"auths":{"ghcr.io":{"auth":"%s"}}}' "$AUTH" | base64 | tr -d '\n')
-        mkdir -p "$(dirname "${REGISTRY_VALUES_FILE}")"
-        printf 'registry:\n  dockerconfigjson: "%s"\n' "$CONFIG" > "${REGISTRY_VALUES_FILE}"
-      args:
-        executable: /bin/bash
-      environment:
-        GITHUB_USER: "{{ lookup('env', 'GITHUB_USER') }}"
-        GITHUB_TOKEN: "{{ lookup('env', 'GITHUB_TOKEN') }}"
-        REGISTRY_VALUES_FILE: "{{ registry_values_file }}"
-
 - name: Déployer sample-app via Helm
   hosts: master
   vars:
     values_sealed_file: "{{ playbook_dir }}/../charts/sample-app/values.sealed.yaml"
     gitops_values_file: "{{ playbook_dir }}/../gitops/sample-app/values.yaml"
-    registry_values_file: "{{ playbook_dir }}/../.tmp/registry-values.yaml"
+    chart_src: "{{ playbook_dir }}/../charts/sample-app"
     release_name: app
     app_namespace: sample-app
-    chart: "oci://ghcr.io/epitechmscpropromo2026/t-clo-902-nan_1/charts/sample-app"
-    chart_version: "0.1.0"
+    ghcr_pull_secret_name: ghcr-registry
     k8s_master_config: /etc/kubernetes/admin.conf
     app_secret_name: "{{ release_name }}-sample-app-app-secrets"
+    github_user: "{{ lookup('env', 'GITHUB_USER') | default('', true) }}"
+    github_token: "{{ lookup('env', 'GITHUB_TOKEN') | default('', true) }}"
 
   tasks:
+    - name: "[APP] Créer le namespace {{ app_namespace }}"
+      kubernetes.core.k8s:
+        kubeconfig: "{{ k8s_master_config }}"
+        api_version: v1
+        kind: Namespace
+        name: "{{ app_namespace }}"
+        state: present
+
+    - name: "[APP] Vérifier si le imagePullSecret {{ ghcr_pull_secret_name }} existe"
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ k8s_master_config }}"
+        api_version: v1
+        kind: Secret
+        name: "{{ ghcr_pull_secret_name }}"
+        namespace: "{{ app_namespace }}"
+      register: ghcr_pull_secret
+      failed_when: false
+
+    - name: "[APP] Créer / mettre à jour le imagePullSecret GHCR (si credentials fournis)"
+      when: github_token | length > 0 and github_user | length > 0
+      ansible.builtin.shell: |
+        set -euo pipefail
+        export KUBECONFIG="{{ k8s_master_config }}"
+        kubectl create secret docker-registry {{ ghcr_pull_secret_name }} \
+          --docker-server=ghcr.io \
+          --docker-username="{{ github_user }}" \
+          --docker-password="{{ github_token }}" \
+          --namespace="{{ app_namespace }}" \
+          --dry-run=client -o yaml | kubectl apply -f -
+      args:
+        executable: /bin/bash
+
+    - name: "[APP] Erreur si imagePullSecret GHCR absent"
+      ansible.builtin.fail:
+        msg: >-
+          Le secret {{ ghcr_pull_secret_name }} n'existe pas dans {{ app_namespace }}.
+          Exportez GITHUB_USER et GITHUB_TOKEN une seule fois pour le créer,
+          puis les prochains deploys n'en auront plus besoin.
+      when:
+        - ghcr_pull_secret.resources | default([]) | length == 0
+        - github_token | length == 0 or github_user | length == 0
+
+    - name: "[APP] Copier le chart Helm sur le master"
+      ansible.builtin.copy:
+        src: "{{ chart_src }}/"
+        dest: /tmp/sample-app-chart/
+        mode: "0644"
+        directory_mode: "0755"
+
     - name: "[APP] Copier values.sealed.yaml sur le master"
-      copy:
+      ansible.builtin.copy:
         src: "{{ values_sealed_file }}"
         dest: /tmp/sample-app-values.sealed.yaml
         mode: "0644"
 
     - name: "[APP] Copier gitops/sample-app/values.yaml sur le master"
-      copy:
+      ansible.builtin.copy:
         src: "{{ gitops_values_file }}"
         dest: /tmp/sample-app-gitops-values.yaml
         mode: "0644"
 
-    - name: "[APP] Copier registry-values.yaml sur le master"
-      copy:
-        src: "{{ registry_values_file }}"
-        dest: /tmp/sample-app-registry-values.yaml
-        mode: "0600"
-
-    - name: "[APP] Se connecter au registry GHCR pour Helm"
-      shell: |
-        set -euo pipefail
-        echo "{{ lookup('env', 'GITHUB_TOKEN') }}" | \
-          KUBECONFIG="{{ k8s_master_config }}" \
-          helm registry login ghcr.io \
-            --username "{{ lookup('env', 'GITHUB_USER') }}" \
-            --password-stdin
-      args:
-        executable: /bin/bash
-
     - name: "[APP] Déployer sample-app via Helm"
-      shell: |
+      ansible.builtin.shell: |
         set -euo pipefail
         KUBECONFIG="{{ k8s_master_config }}" \
-          helm upgrade --install {{ release_name }} {{ chart }} \
-          --version {{ chart_version }} \
+          helm upgrade --install {{ release_name }} /tmp/sample-app-chart/ \
           --namespace {{ app_namespace }} \
-          --create-namespace \
           -f /tmp/sample-app-values.sealed.yaml \
-          -f /tmp/sample-app-gitops-values.yaml \
-          -f /tmp/sample-app-registry-values.yaml
+          -f /tmp/sample-app-gitops-values.yaml
       args:
         executable: /bin/bash
 
     - name: "[APP] Attendre le déchiffrement du SealedSecret"
-      shell: |
+      ansible.builtin.shell: |
         set -euo pipefail
         for _ in $(seq 1 30); do
           if KUBECONFIG="{{ k8s_master_config }}" \
@@ -125,19 +135,37 @@
       changed_when: false
 
     - name: "[APP] Vérifier le déploiement"
-      shell: |
-        KUBECONFIG="{{ k8s_master_config }}" \
+      ansible.builtin.shell: |
+        set -euo pipefail
+        if ! KUBECONFIG="{{ k8s_master_config }}" \
           kubectl rollout status deployment/{{ release_name }}-sample-app \
-          -n {{ app_namespace }} --timeout=120s
+          -n {{ app_namespace }} --timeout=300s; then
+          echo "=== Pods sample-app ==="
+          KUBECONFIG="{{ k8s_master_config }}" \
+            kubectl get pods -n {{ app_namespace }} -l app.kubernetes.io/name=sample-app
+          echo "=== Derniers événements ==="
+          KUBECONFIG="{{ k8s_master_config }}" \
+            kubectl get events -n {{ app_namespace }} --sort-by=.lastTimestamp | tail -15
+          failing_pod="$(KUBECONFIG="{{ k8s_master_config }}" \
+            kubectl get pods -n {{ app_namespace }} -l app.kubernetes.io/name=sample-app \
+            -o jsonpath='{range .items[?(@.status.phase!="Running")]}{.metadata.name}{"\n"}{end}' \
+            | head -1)"
+          if [ -n "$failing_pod" ]; then
+            echo "=== Describe $failing_pod ==="
+            KUBECONFIG="{{ k8s_master_config }}" \
+              kubectl describe pod "$failing_pod" -n {{ app_namespace }} | tail -25
+          fi
+          exit 1
+        fi
       args:
         executable: /bin/bash
       changed_when: false
 
-    - name: "[APP] Supprimer les fichiers de values temporaires du master"
-      file:
+    - name: "[APP] Supprimer les fichiers temporaires du master"
+      ansible.builtin.file:
         path: "{{ item }}"
         state: absent
       loop:
+        - /tmp/sample-app-chart
         - /tmp/sample-app-values.sealed.yaml
         - /tmp/sample-app-gitops-values.yaml
-        - /tmp/sample-app-registry-values.yaml

@@ -9,23 +9,14 @@ metadata:
 spec:
   parentRefs:
     - name: public-gateway
-      namespace: envoy-gateway-system
+      namespace: traefik-system
+  hostnames:
+    - headlamp.15-237-15-14.nip.io
   rules:
     - matches:
         - path:
-            type: Exact
-            value: /headlamp
-      filters:
-        - type: RequestRedirect
-          requestRedirect:
-            path:
-              type: ReplaceFullPath
-              replaceFullPath: /headlamp/
-            statusCode: 301
-    - matches:
-        - path:
             type: PathPrefix
-            value: /headlamp/
+            value: /
       backendRefs:
         - name: headlamp
           port: 80

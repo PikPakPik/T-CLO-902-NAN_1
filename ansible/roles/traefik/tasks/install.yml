@@ -1,0 +1,111 @@
+---
+- name: '[TRAEFIK] Installer les CRDs Gateway API v1.5.1'
+  kubernetes.core.k8s:
+    kubeconfig: '{{ k8s_master_config }}'
+    src: '{{ gateway_api_crds_url }}'
+    state: present
+
+- name: '[TRAEFIK] Ajouter le repo Helm Traefik'
+  ansible.builtin.command:
+    argv:
+      - helm
+      - repo
+      - add
+      - traefik
+      - '{{ traefik_chart_repo }}'
+  register: traefik_repo_add
+  failed_when: >-
+    traefik_repo_add.rc != 0
+    and ('already exists' not in (traefik_repo_add.stderr | default('')))
+  changed_when: "'already exists' not in (traefik_repo_add.stderr | default(''))"
+
+- name: '[TRAEFIK] Mettre à jour le cache des repos Helm'
+  ansible.builtin.command: helm repo update
+  changed_when: false
+
+- name: '[TRAEFIK] Récupérer le nom du nœud control-plane'
+  kubernetes.core.k8s_info:
+    kubeconfig: '{{ k8s_master_config }}'
+    api_version: v1
+    kind: Node
+    label_selectors:
+      - node-role.kubernetes.io/control-plane
+  register: traefik_control_plane_nodes
+  changed_when: false
+
+- name: '[TRAEFIK] Définir traefik_master_node_name'
+  ansible.builtin.set_fact:
+    traefik_master_node_name: '{{ traefik_control_plane_nodes.resources[0].metadata.name }}'
+
+- name: '[TRAEFIK] Débloquer une release Helm coincée (pending-upgrade/rollback)'
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ k8s_master_config }}"
+    status="$(helm list -n {{ traefik_namespace }} -a -o json | python3 -c "
+    import sys, json
+    releases = json.load(sys.stdin)
+    print(releases[0]['status'] if releases else 'none')
+    ")"
+    if [[ "$status" == "pending-upgrade" || "$status" == "pending-rollback" ]]; then
+      kubectl delete secret -n {{ traefik_namespace }} \
+        -l "owner=helm,name=traefik,status in (pending-upgrade,pending-rollback)" \
+        --ignore-not-found
+    fi
+  args:
+    executable: /bin/bash
+  changed_when: false
+  failed_when: false
+
+- name: '[TRAEFIK] Installer Traefik via Helm (provider Kubernetes Gateway + hostNetwork)'
+  kubernetes.core.helm:
+    kubeconfig: '{{ k8s_master_config }}'
+    name: traefik
+    chart_ref: traefik/traefik
+    release_namespace: '{{ traefik_namespace }}'
+    create_namespace: yes
+    chart_version: '{{ traefik_chart_version }}'
+    update_repo_cache: false
+    values:
+      # Provider Kubernetes Gateway (selon documentation officielle)
+      providers:
+        kubernetesGateway:
+          enabled: true
+
+      # Configuration des entryPoints pour Gateway API
+      ports:
+        web:
+          port: 80
+          expose:
+            default: true
+          protocol: TCP
+        traefik:
+          port: 8000
+          expose:
+            default: true
+          protocol: TCP
+
+      # Pas de Service Kubernetes (on utilise hostNetwork)
+      service:
+        enabled: false
+
+      # Chart v40 : hostNetwork / nodeSelector / tolerations sont au niveau racine
+      hostNetwork: true
+      nodeSelector:
+        kubernetes.io/hostname: '{{ traefik_master_node_name }}'
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+
+      # Port 80 en hostNetwork : Traefik doit binder en root (seccomp bloque NET_BIND_SERVICE)
+      securityContext:
+        runAsUser: 0
+        runAsGroup: 0
+        runAsNonRoot: false
+
+- name: '[TRAEFIK] Attendre que le Deployment Traefik soit ready'
+  ansible.builtin.shell: |
+    export KUBECONFIG={{ k8s_master_config }}
+    kubectl -n {{ traefik_namespace }} rollout status deploy/traefik --timeout=180s
+  args:
+    executable: /bin/bash
+  changed_when: false

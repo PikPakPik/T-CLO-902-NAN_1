@@ -1,10 +1,9 @@
 ---
-- name: Deploy Envoy Gateway (nginx + statut)
+- name: Deploy Traefik Gateway
   hosts: k8s_master
-  gather_facts: yes
   become: yes
 
   tasks:
     - ansible.builtin.import_role:
-        name: envoy-gateway
+        name: traefik
         tasks_from: deploy

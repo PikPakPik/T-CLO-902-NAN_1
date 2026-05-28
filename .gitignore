@@ -3,3 +3,4 @@ ansible/sealed-secrets.pem
 .tmp/
 charts/sample-app/secrets.yaml
 charts/sample-app/charts/*.tgz
+.private/*
