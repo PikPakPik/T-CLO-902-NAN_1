@@ -24,12 +24,12 @@
   ansible.builtin.import_playbook: deploy_sealed_secrets.yml
   tags: [sealed-secrets]
 
-- name: Installer Gateway API et Envoy Gateway
-  ansible.builtin.import_playbook: install_gateway-api.yml
+- name: Installer le Gateway (Traefik)
+  ansible.builtin.import_playbook: install_traefik.yml
   tags: [gateway, gateway-install]
 
-- name: Exposer le Gateway (nginx sur le master)
-  ansible.builtin.import_playbook: deploy_gateway.yml
+- name: Exposer les applications via le Gateway (Traefik)
+  ansible.builtin.import_playbook: deploy_traefik.yml
   tags: [gateway, gateway-deploy]
 
 - name: Déployer sample-app (Helm)
