@@ -25,7 +25,7 @@ all:
           ansible_ssh_common_args: '-o ProxyCommand="ssh -i ~/.ssh/kubequest.pem -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -W %h:%p ec2-user@15.237.15.14"'
           
         worker3:
-          ansible_host: 10.0.3.77
+          ansible_host: 10.0.3.213
           ansible_ssh_common_args: '-o ProxyCommand="ssh -i ~/.ssh/kubequest.pem -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -W %h:%p ec2-user@15.237.15.14"'
 
     k8s_cluster:
