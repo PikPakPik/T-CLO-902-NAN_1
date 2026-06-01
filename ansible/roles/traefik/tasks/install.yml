@@ -88,6 +88,14 @@
       service:
         enabled: false
 
+      # hostNetwork + hostPort 80 : un seul pod peut binder le port à la fois.
+      # La stratégie RollingUpdate par défaut (maxSurge 1) tente de démarrer le
+      # nouveau pod avant de tuer l'ancien -> deadlock (port déjà pris).
+      # Recreate tue l'ancien pod d'abord.
+      updateStrategy:
+        type: Recreate
+        rollingUpdate: null
+
       # Chart v40 : hostNetwork / nodeSelector / tolerations sont au niveau racine
       hostNetwork: true
       nodeSelector:
@@ -96,11 +104,16 @@
         - key: node-role.kubernetes.io/control-plane
           operator: Exists
 
-      # Port 80 en hostNetwork : Traefik doit binder en root (seccomp bloque NET_BIND_SERVICE)
+      # Port 80 en hostNetwork : le chart drop TOUTES les capabilities par défaut,
+      # donc même en root le process perd CAP_NET_BIND_SERVICE et ne peut pas
+      # binder le port 80. On la rajoute explicitement.
       securityContext:
         runAsUser: 0
         runAsGroup: 0
         runAsNonRoot: false
+        capabilities:
+          add:
+            - NET_BIND_SERVICE
 
 - name: '[TRAEFIK] Attendre que le Deployment Traefik soit ready'
   ansible.builtin.shell: |
