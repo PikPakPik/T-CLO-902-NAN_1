@@ -141,6 +141,26 @@
   ansible.builtin.command: helm repo update
   changed_when: false
 
+- name: "[MONITORING] Vérifier que le SealedSecret Grafana existe"
+  ansible.builtin.stat:
+    path: "{{ monitoring_kustomize_src }}/grafana-sealedsecret.yaml"
+  register: grafana_sealed_secret_stat
+  delegate_to: localhost
+  become: false
+
+- name: "[MONITORING] Erreur si grafana-sealedsecret.yaml est absent"
+  ansible.builtin.fail:
+    msg: >-
+      infra/monitoring/grafana-sealedsecret.yaml est introuvable.
+      Générez-le avec ./scripts/seal-grafana-secret.sh (voir docs/sealed-secrets.md).
+  when: not grafana_sealed_secret_stat.stat.exists
+
+- name: "[MONITORING] Appliquer le SealedSecret Grafana (avant Helm)"
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k8s_master_config }}"
+    src: "{{ monitoring_kustomize_src }}/grafana-sealedsecret.yaml"
+    state: present
+
 - name: "[MONITORING] Installer / mettre à jour kube-prometheus-stack via Helm"
   kubernetes.core.helm:
     kubeconfig: "{{ k8s_master_config }}"

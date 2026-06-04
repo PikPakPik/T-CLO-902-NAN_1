@@ -105,3 +105,34 @@ Le chart va créer une ressource `SealedSecret` (`bitnami.com/v1alpha1`) qui ser
 - `cluster-wide` : secret déchiffrable dans tout le cluster.
 
 Le scope se configure via `secrets.scope` dans `values.sealed.yaml`.
+
+## 6) SealedSecret admin Grafana (monitoring)
+
+Le mot de passe Grafana ne doit pas figurer en clair dans Ansible ou Helm. Le chart `kube-prometheus-stack` lit un Secret créé à partir d’un `SealedSecret` :
+
+| Élément | Valeur |
+| -------- | ------ |
+| Namespace | `monitoring` |
+| Nom du Secret / SealedSecret | `grafana-admin-credentials` |
+| Clés | `admin-user`, `admin-password` |
+
+Génération (certificat cluster, ex. PEM dans `/tmp`) :
+
+```bash
+export CERT=/tmp/sealed-secrets.pem   # ou ansible/sealed-secrets.pem
+export GRAFANA_ADMIN_PASSWORD='votre-mot-de-passe'
+# optionnel : export GRAFANA_ADMIN_USER=admin
+
+./scripts/seal-grafana-secret.sh
+```
+
+Cela écrit `infra/monitoring/grafana-sealedsecret.yaml` (à versionner : données chiffrées).
+
+Déploiement :
+
+```bash
+cd ansible
+ansible-playbook -i inventory.yml deploy_monitoring.yml
+```
+
+Le playbook applique le SealedSecret **avant** Helm, puis configure Grafana avec `grafana.admin.existingSecret`.
