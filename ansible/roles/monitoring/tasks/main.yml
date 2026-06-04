@@ -1,17 +1,26 @@
 ---
-- name: "[MONITORING] Récupérer le nom du noeud control-plane"
+- name: "[MONITORING] Résoudre le nom du node Kubernetes worker1"
   kubernetes.core.k8s_info:
     kubeconfig: "{{ k8s_master_config }}"
     api_version: v1
     kind: Node
-    label_selectors:
-      - node-role.kubernetes.io/control-plane
-  register: monitoring_control_plane_nodes
+  register: monitoring_nodes
   changed_when: false
 
-- name: "[MONITORING] Définir monitoring_master_node_name"
+- name: "[MONITORING] Définir le node cible (worker1)"
   ansible.builtin.set_fact:
-    monitoring_master_node_name: "{{ monitoring_control_plane_nodes.resources[0].metadata.name }}"
+    monitoring_target_node_name: >-
+      {{
+        monitoring_nodes.resources
+        | json_query("[?status.addresses[?address=='" + worker1_internal_ip + "']].metadata.name")
+        | first
+        | default('')
+      }}
+
+- name: "[MONITORING] Vérifier qu'on a trouvé le node Kubernetes worker1"
+  ansible.builtin.fail:
+    msg: "Impossible de trouver le node Kubernetes correspondant à worker1 (ip={{ worker1_internal_ip }})"
+  when: monitoring_target_node_name | length == 0
 
 - name: "[MONITORING] Vérifier si la StorageClass {{ monitoring_storage_class }} existe"
   kubernetes.core.k8s_info:
@@ -53,8 +62,10 @@
     state: present
     wait: false
 
-- name: "[MONITORING] Scheduler local-path sur le master (PVC monitoring sur control-plane)"
-  when: monitoring_need_local_path | bool
+- name: "[MONITORING] Scheduler local-path sur worker1 (PVC monitoring)"
+  when: >-
+    monitoring_need_local_path | bool
+    or (monitoring_local_path_deploy.resources | default([]) | length > 0)
   kubernetes.core.k8s:
     kubeconfig: "{{ k8s_master_config }}"
     api_version: apps/v1
@@ -67,11 +78,7 @@
         template:
           spec:
             nodeSelector:
-              kubernetes.io/hostname: "{{ monitoring_master_node_name }}"
-            tolerations:
-              - key: node-role.kubernetes.io/control-plane
-                operator: Exists
-                effect: NoSchedule
+              kubernetes.io/hostname: "{{ monitoring_target_node_name }}"
 
 - name: "[MONITORING] Attendre que local-path-provisioner soit Ready"
   when: monitoring_need_local_path | bool
@@ -141,10 +148,17 @@
   ansible.builtin.command: helm repo update
   changed_when: false
 
+- name: "[MONITORING] Copier les manifests monitoring sur le master (depuis la machine de contrôle)"
+  ansible.builtin.copy:
+    src: "{{ monitoring_kustomize_src }}/"
+    dest: /tmp/kubequest/infra/monitoring/
+    mode: "0644"
+    directory_mode: "0755"
+
 - name: "[MONITORING] Appliquer le SealedSecret Grafana (avant Helm)"
   kubernetes.core.k8s:
     kubeconfig: "{{ k8s_master_config }}"
-    src: "{{ monitoring_kustomize_src }}/grafana-sealedsecret.yaml"
+    src: /tmp/kubequest/infra/monitoring/grafana-sealedsecret.yaml
     state: present
 
 - name: "[MONITORING] Installer / mettre à jour kube-prometheus-stack via Helm"
@@ -161,13 +175,6 @@
       - /tmp/kubequest/monitoring/values.yaml
     wait: true
     timeout: 10m
-
-- name: "[MONITORING] Copier les manifests Kustomize sur le master"
-  ansible.builtin.copy:
-    src: "{{ monitoring_kustomize_src }}/"
-    dest: /tmp/kubequest/infra/monitoring/
-    mode: "0644"
-    directory_mode: "0755"
 
 - name: "[MONITORING] Vérifier que les CRDs Gateway API (HTTPRoute) sont installées"
   kubernetes.core.k8s_info:

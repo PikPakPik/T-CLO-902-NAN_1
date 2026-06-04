@@ -1,5 +1,8 @@
 ---
-# ----- Grafana sur master uniquement (exposé via HTTPRoute {{ monitoring_grafana_hostname }}) -----
+# Stack monitoring (Grafana, Prometheus, etc.) sur worker1 uniquement
+# node-exporter : DaemonSet sur chaque nœud du cluster (y compris master)
+
+# ----- Grafana (exposé via HTTPRoute {{ monitoring_grafana_hostname }}) -----
 grafana:
   enabled: true
   admin:
@@ -15,18 +18,13 @@ grafana:
     fsGroup: 472
   grafana.ini:
     server:
-      # Sous-domaine dédié (path /) : root_url explicite, pas de sub-path.
       root_url: "http://{{ monitoring_grafana_hostname }}/"
       domain: "{{ monitoring_grafana_hostname }}"
       serve_from_sub_path: false
   service:
     type: ClusterIP
   nodeSelector:
-    kubernetes.io/hostname: {{ monitoring_master_node_name }}
-  tolerations:
-    - key: node-role.kubernetes.io/control-plane
-      operator: Exists
-      effect: NoSchedule
+    kubernetes.io/hostname: {{ monitoring_target_node_name }}
   persistence:
     enabled: true
     type: pvc
@@ -34,7 +32,7 @@ grafana:
     accessModes: ["ReadWriteOnce"]
     size: 5Gi
 
-# ----- Prometheus sur master uniquement (exposé via HTTPRoute {{ monitoring_prometheus_hostname }}) -----
+# ----- Prometheus (exposé via HTTPRoute {{ monitoring_prometheus_hostname }}) -----
 prometheus:
   service:
     type: ClusterIP
@@ -43,11 +41,7 @@ prometheus:
     externalUrl: "http://{{ monitoring_prometheus_hostname }}/"
     routePrefix: /
     nodeSelector:
-      kubernetes.io/hostname: {{ monitoring_master_node_name }}
-    tolerations:
-      - key: node-role.kubernetes.io/control-plane
-        operator: Exists
-        effect: NoSchedule
+      kubernetes.io/hostname: {{ monitoring_target_node_name }}
     storageSpec:
       volumeClaimTemplate:
         spec:
@@ -57,15 +51,11 @@ prometheus:
             requests:
               storage: {{ monitoring_prometheus_pvc_size }}
 
-# ----- Alertmanager sur master uniquement -----
+# ----- Alertmanager -----
 alertmanager:
   alertmanagerSpec:
     nodeSelector:
-      kubernetes.io/hostname: {{ monitoring_master_node_name }}
-    tolerations:
-      - key: node-role.kubernetes.io/control-plane
-        operator: Exists
-        effect: NoSchedule
+      kubernetes.io/hostname: {{ monitoring_target_node_name }}
     storage:
       volumeClaimTemplate:
         spec:
@@ -75,39 +65,26 @@ alertmanager:
             requests:
               storage: 2Gi
 
-# ----- prometheus-operator sur master uniquement -----
+# ----- prometheus-operator -----
 prometheusOperator:
   nodeSelector:
-    kubernetes.io/hostname: {{ monitoring_master_node_name }}
-  tolerations:
-    - key: node-role.kubernetes.io/control-plane
-      operator: Exists
-      effect: NoSchedule
+    kubernetes.io/hostname: {{ monitoring_target_node_name }}
   admissionWebhooks:
     patch:
       nodeSelector:
-        kubernetes.io/hostname: {{ monitoring_master_node_name }}
-      tolerations:
-        - key: node-role.kubernetes.io/control-plane
-          operator: Exists
-          effect: NoSchedule
+        kubernetes.io/hostname: {{ monitoring_target_node_name }}
 
-# ----- kube-state-metrics sur master uniquement -----
+# ----- kube-state-metrics -----
 kube-state-metrics:
   nodeSelector:
-    kubernetes.io/hostname: {{ monitoring_master_node_name }}
+    kubernetes.io/hostname: {{ monitoring_target_node_name }}
+
+# ----- node-exporter : un pod par nœud (DaemonSet) -----
+prometheus-node-exporter:
   tolerations:
     - key: node-role.kubernetes.io/control-plane
       operator: Exists
       effect: NoSchedule
-
-# ----- node-exporter sur workers uniquement -----
-prometheus-node-exporter:
-  affinity:
-    nodeAffinity:
-      requiredDuringSchedulingIgnoredDuringExecution:
-        nodeSelectorTerms:
-          - matchExpressions:
-              - key: node-role.kubernetes.io/control-plane
-                operator: DoesNotExist
-  tolerations: []
+    - key: node-role.kubernetes.io/master
+      operator: Exists
+      effect: NoSchedule

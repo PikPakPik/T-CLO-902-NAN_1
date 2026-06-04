@@ -1,2 +1,0 @@
----
-monitoring_kustomize_src: "{{ playbook_dir }}/../infra/monitoring"

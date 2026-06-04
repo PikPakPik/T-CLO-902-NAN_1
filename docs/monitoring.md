@@ -10,7 +10,7 @@ flowchart LR
     gw[Gateway public-gateway] --> grafanaRoute[HTTPRoute grafana]
     gw --> promRoute[HTTPRoute prometheus]
 
-    subgraph master[node: master]
+    subgraph worker1[node: worker1]
         grafanaSvc[Service ClusterIP\ngrafana :80]
         promSvc[Service ClusterIP\nprometheus :9090]
         grafana[Grafana Pod]
@@ -22,10 +22,10 @@ flowchart LR
         promRoute --> promSvc --> prom
     end
 
-    subgraph workers[nodes: workers]
-        ne1[node-exporter\nworker1]
-        ne2[node-exporter\nworker2]
-        ne3[node-exporter\nworker3]
+    subgraph allNodes[tous les nœuds]
+        ne1[node-exporter]
+        ne2[node-exporter]
+        ne3[node-exporter]
     end
 
     prom -->|scrape| ne1
@@ -38,16 +38,16 @@ flowchart LR
 
 ## Composants installés
 
-| Composant            | Rôle                                                                     | Localisation |
-| -------------------- | ------------------------------------------------------------------------ | ------------ |
-| Prometheus           | Collecte et stocke les métriques du cluster                              | master       |
-| Grafana              | Interface web pour visualiser les métriques via des dashboards           | master       |
-| Alertmanager         | Gère les alertes générées par Prometheus                                 | master       |
-| prometheus-operator  | Gère le cycle de vie des ressources Prometheus/Alertmanager              | master       |
-| kube-state-metrics   | Expose l'état des objets Kubernetes (pods, deployments, etc.) en métriques | master       |
-| node-exporter        | Expose les métriques système (CPU, RAM, disque, réseau) de chaque nœud   | workers      |
+| Composant            | Rôle                                                                     | Localisation                          |
+| -------------------- | ------------------------------------------------------------------------ | ------------------------------------- |
+| Prometheus           | Collecte et stocke les métriques du cluster                              | worker1 (`nodeSelector`)              |
+| Grafana              | Interface web pour visualiser les métriques via des dashboards           | worker1                               |
+| Alertmanager         | Gère les alertes générées par Prometheus                                 | worker1                               |
+| prometheus-operator  | Gère le cycle de vie des ressources Prometheus/Alertmanager              | worker1                               |
+| kube-state-metrics   | Expose l'état des objets Kubernetes (pods, deployments, etc.) en métriques | worker1                             |
+| node-exporter        | Expose les métriques système (CPU, RAM, disque, réseau) de chaque nœud   | DaemonSet sur **tous** les nœuds      |
 
-> Note : Prometheus et Grafana sont **épinglés sur le master** (via `nodeSelector` + tolérations sur `node-role.kubernetes.io/control-plane`) pour réserver les ressources des workers aux applications. À l'inverse, `node-exporter` tourne **uniquement sur les workers** afin de remonter leurs métriques système.
+> Note : le nom du nœud worker1 est résolu depuis `inventory.yml` (IP interne `10.0.3.198`). `local-path-provisioner` est aussi épinglé sur worker1 pour que les PVC monitoring soient provisionnés au bon endroit.
 
 ## Déploiement via Ansible (recommandé)
 
