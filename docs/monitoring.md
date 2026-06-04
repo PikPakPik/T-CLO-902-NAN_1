@@ -83,9 +83,9 @@ ansible-playbook deploy_all.yml
 | `monitoring_storage_class`        | `local-path`              | StorageClass utilisée pour les PVC               |
 | `monitoring_prometheus_pvc_size`  | `20Gi`                    | Taille du volume Prometheus                      |
 | `monitoring_prometheus_retention` | `15d`                     | Durée de rétention des métriques Prometheus      |
-| `grafana_admin_password`          | `admin`                   | Mot de passe admin Grafana (à surcharger)        |
+| `grafana_admin_secret_name`       | `grafana-admin-credentials` | Secret admin Grafana (via SealedSecret)        |
 
-> ⚠️ **Important** : Surcharger `grafana_admin_password` en production via `--extra-vars` ou un vault Ansible. Ne pas laisser la valeur par défaut.
+> ⚠️ **Important** : Générer `infra/monitoring/grafana-sealedsecret.yaml` avec `./scripts/seal-grafana-secret.sh` (voir `docs/sealed-secrets.md`). Aucun mot de passe en clair dans le dépôt.
 
 ## Accès via Gateway (après `deploy_gateway.yml`)
 
@@ -101,6 +101,6 @@ Prérequis : port **TCP 80** ouvert sur le security group du master.
 Identifiants par défaut :
 
 - **utilisateur** : `admin`
-- **mot de passe** : valeur de `grafana_admin_password` (défaut : `admin`)
+- **mot de passe** : valeur scellée dans `grafana-admin-credentials` (défini lors de `seal-grafana-secret.sh`)
 
 À la première connexion, Grafana propose de changer le mot de passe. Prometheus est exposé **sans authentification** ; ne pas l'exposer publiquement sans protection supplémentaire (reverse-proxy, security group restrictif).

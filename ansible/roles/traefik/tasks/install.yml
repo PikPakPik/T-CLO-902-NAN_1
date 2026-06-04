@@ -78,6 +78,11 @@
           expose:
             default: true
           protocol: TCP
+        websecure:
+          port: 443
+          expose:
+            default: true
+          protocol: TCP
         traefik:
           port: 8000
           expose:

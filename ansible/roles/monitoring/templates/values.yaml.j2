@@ -2,7 +2,10 @@
 # ----- Grafana sur master uniquement (exposé via HTTPRoute {{ monitoring_grafana_hostname }}) -----
 grafana:
   enabled: true
-  adminPassword: "{{ grafana_admin_password }}"
+  admin:
+    existingSecret: "{{ grafana_admin_secret_name }}"
+    userKey: admin-user
+    passwordKey: admin-password
   initChownData:
     enabled: false
   securityContext:
