@@ -24,11 +24,39 @@ Dans ce projet, Helm sert à déployer l'application Laravel et sa base de donn�
 
 > Les backups MySQL automatiques (CronJob, rétention, restauration) sont documentés dans [`docs/mysql-backup.md`](mysql-backup.md).
 
+## Prérequis locaux
+
+- [`kubeseal`](https://github.com/bitnami-labs/sealed-secrets/releases) CLI installé (version identique au controller, voir `ansible/group_vars/all.yml` → `sealed_secrets_chart_version`).
+
+```bash
+VERSION="0.32.2"
+curl -OL "https://github.com/bitnami-labs/sealed-secrets/releases/download/v${VERSION}/kubeseal-${VERSION}-linux-amd64.tar.gz"
+tar -xzf "kubeseal-${VERSION}-linux-amd64.tar.gz" kubeseal
+sudo install -m 755 kubeseal /usr/local/bin/kubeseal
+rm -f kubeseal "kubeseal-${VERSION}-linux-amd64.tar.gz"
+```
+
 ## Préparer les secrets
+
+### 0. Récupérer le certificat du cluster (une fois par cluster)
+
+Le fichier `ansible/sealed-secrets.pem` n'est pas versionné — il est propre à chaque cluster. Si le fichier n'existe pas (nouveau clone, nouveau cluster, réinstallation du controller), le régénérer.
+
+**Sur le master** (kubectl n'est pas configuré en local) :
+
+```bash
+kubectl get secret -n kube-system \
+  -l sealedsecrets.bitnami.com/sealed-secrets-key \
+  -o jsonpath='{.items[0].data.tls\.crt}' | base64 -d
+```
+
+Copier l'output (de `-----BEGIN CERTIFICATE-----` à `-----END CERTIFICATE-----`) dans `ansible/sealed-secrets.pem` sur ta machine locale.
+
+> Si `ansible/sealed-secrets.pem` est absent ou correspond à un ancien cluster, le SealedSecret ne pourra pas être déchiffré et la migration job restera bloquée en `Pending` jusqu'au timeout Helm.
 
 ### 1. Secrets applicatifs (APP_KEY, mot de passe BDD)
 
-Générer `values.sealed.yaml` avec le script :
+Générer `values.sealed.yaml` avec le script (nécessite `ansible/sealed-secrets.pem`) :
 
 ```bash
 export APP_KEY='base64:…'   # ex. php artisan key:generate --show
@@ -36,7 +64,7 @@ export DB_PASSWORD='…'      # identique au mot de passe utilisateur BDD
 ./scripts/seal-sample-app-secrets.sh
 ```
 
-Commiter `charts/sample-app/values.sealed.yaml` (données chiffrées, safe pour Git).
+Le script génère `charts/sample-app/values.sealed.yaml` avec les valeurs chiffrées. Commiter ce fichier (safe pour Git). Ne pas créer `sealed-secrets.yaml` manuellement — `sealed-secrets.example.yaml` est uniquement un exemple de structure.
 
 ### 2. Credentials GHCR (pull d'image)
 
