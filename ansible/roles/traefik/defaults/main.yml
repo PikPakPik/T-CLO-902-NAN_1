@@ -6,9 +6,6 @@ traefik_chart_repo: https://traefik.github.io/charts
 traefik_chart_name: traefik
 traefik_chart_version: v40.2.0
 
-# Gateway API CRDs (nécessaire car Traefik v40.2.0 ne les inclut plus)
-gateway_api_crds_url: https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.5.1/standard-install.yaml
-
 traefik_kustomize_src: '{{ playbook_dir }}/../infra/traefik'
 
 gateway_name: public-gateway

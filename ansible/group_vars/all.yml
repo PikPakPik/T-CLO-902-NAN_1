@@ -16,7 +16,7 @@ headlamp_kustomize_src: "{{ playbook_dir }}/../infra/headlamp"
 monitoring_kustomize_src: "{{ playbook_dir }}/../infra/monitoring"
 
 # Gateway API (HTTPRoute, etc.) — requis avant les HTTPRoutes monitoring/headlamp
-gateway_api_crds_url: https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.5.0/standard-install.yaml
+gateway_api_crds_url: https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.5.1/standard-install.yaml
 
 monitoring_namespace: monitoring
 monitoring_release_name: kube-prometheus
@@ -24,8 +24,11 @@ monitoring_chart_repo_name: prometheus-community
 monitoring_chart_repo_url: https://prometheus-community.github.io/helm-charts
 monitoring_chart_version: "85.0.3"
 
-# Mot de passe admin Grafana. À surcharger via --extra-vars en production.
-grafana_admin_password: admin
+# Identifiants admin Grafana : fournis via un SealedSecret (aucun mot de passe en clair ici).
+# Le contrôleur Sealed Secrets déchiffre infra/monitoring/grafana-sealedsecret.yaml en un Secret
+# référencé par Grafana (grafana.admin.existingSecret).
+# Génération : scripts/seal-grafana-secret.sh (voir docs/sealed-secrets.md).
+grafana_admin_secret_name: grafana-admin-credentials
 
 # StorageClass utilisée par le PVC Prometheus. Doit exister avant l'install.
 monitoring_storage_class: local-path
