@@ -6,8 +6,8 @@ Headlamp est une interface web open-source pour Kubernetes. Elle permet de visua
 
 ```mermaid
 flowchart LR
-    user[🌐 Utilisateur\nnavigateur] -->|/headlamp/| gw
-    gw[Gateway public-gateway] --> route[HTTPRoute headlamp]
+    user[🌐 Utilisateur\nnavigateur] -->|headlamp.*.nip.io| gw
+    gw[Gateway public-gateway\nns traefik-system] --> route[HTTPRoute headlamp]
 
     subgraph ns[namespace: headlamp]
         route --> svc[Service ClusterIP\nheadlamp :80]
@@ -38,9 +38,15 @@ Headlamp est déployé via deux mécanismes combinés :
 > (`/etc/kubernetes/admin.conf`) permettant d'administrer le cluster.
 
 ```bash
-helm upgrade --install headlamp headlamp/headlamp --namespace headlamp --create-namespace
+helm repo add headlamp https://kubernetes-sigs.github.io/headlamp/
+helm repo update
+helm upgrade --install headlamp headlamp/headlamp \
+  --namespace headlamp --create-namespace \
+  --set clusterRoleBinding.create=false
 kubectl apply -k infra/headlamp/
 ```
+
+> Le chart est installé avec `clusterRoleBinding.create=false` : on utilise le `ClusterRoleBinding`/`ClusterRole` dédiés (`headlamp-admin` → `headlamp-viewer`) fournis dans `infra/headlamp/` plutôt que celui du chart.
 
 ### Déploiement via Ansible (recommandé)
 
@@ -52,17 +58,21 @@ cd ansible
 ansible-playbook -i inventory.yml deploy_headlamp.yml
 ```
 
-Le playbook force le **Pod** Headlamp sur **worker1** : un `nodeSelector` cible le nœud Kubernetes dont l’adresse interne correspond à `worker1` dans `inventory.yml` (IP privée du VPC).
+Le playbook force le **Pod** Headlamp sur **worker1** : un `nodeSelector` cible le nœud Kubernetes dont l’adresse interne correspond à `worker1` dans `inventory.yml` (IP privée du VPC). Il installe aussi les CRD Gateway API si elles sont absentes, et nettoie les anciennes ressources (ClusterRoleBinding par défaut du chart, ancien Service NodePort) avant d'appliquer les manifests Kustomize.
 
 ## Accès via Gateway (recommandé)
 
-Prérequis : `install_gateway-api.yml` + `deploy_gateway.yml` (comme pour Grafana).
+Prérequis : Traefik déployé (`install_traefik.yml` + `deploy_traefik.yml`), comme pour Grafana. Le playbook installe au besoin les CRD Gateway API.
 
-| Service  | URL (depuis Internet)           |
-| -------- | ------------------------------- |
-| Headlamp | `http://<IP_master>/headlamp/` |
+Le routage se fait **par hostname** (HTTPRoute dédié, chemin `/`), avec un hostname dérivé de l'IP publique du master via [nip.io](https://nip.io) :
 
-Le chart Helm est configuré avec `baseURL: /headlamp`. Le port **TCP 80** du master doit être ouvert dans le security group AWS.
+| Service  | URL (depuis Internet)                       |
+| -------- | ------------------------------------------- |
+| Headlamp | `http://headlamp.<IP_master_tirets>.nip.io/` |
+
+> Exemple avec l'IP `15.237.15.14` : `http://headlamp.15-237-15-14.nip.io/`.
+
+Le port **TCP 80** du master doit être ouvert dans le security group AWS.
 
 Vérification sur le master :
 

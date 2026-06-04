@@ -39,7 +39,7 @@ flowchart TD
             mysql_pod[MySQL 8.0\n× 1]
         end
         migration[Job de migration\nphp artisan migrate]
-        gateway[Envoy Gateway\npublic-gateway]
+        gateway[Traefik\npublic-gateway]
     end
 
     dev --> code

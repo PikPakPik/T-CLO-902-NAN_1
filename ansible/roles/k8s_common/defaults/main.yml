@@ -1,0 +1,5 @@
+---
+k8s_version: "v1.35"
+
+containerd_config_dir: "/etc/containerd"
+containerd_config_file: "config.toml"

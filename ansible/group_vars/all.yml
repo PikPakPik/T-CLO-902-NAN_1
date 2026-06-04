@@ -1,56 +1,12 @@
 ---
-# Interpréteur Python sur les EC2 (Amazon Linux 2023 / AL2)
-ansible_python_interpreter: /usr/bin/python3.9
-
-k8s_version: "v1.35"
 k8s_master_config: "/etc/kubernetes/admin.conf"
 k8s_worker_config: "/etc/kubernetes/kubelet.conf"
 
-calico_version: "v3.31.4"
-calico_manifest_url: "https://raw.githubusercontent.com/projectcalico/calico/{{ calico_version }}/manifests/calico.yaml"
-
-containerd_config_dir: "/etc/containerd"
-containerd_config_file: "config.toml"
-
-headlamp_kustomize_src: "{{ playbook_dir }}/../infra/headlamp"
-monitoring_kustomize_src: "{{ playbook_dir }}/../infra/monitoring"
-
 # Gateway API (HTTPRoute, etc.) — requis avant les HTTPRoutes monitoring/headlamp
 gateway_api_crds_url: https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.5.1/standard-install.yaml
-
-monitoring_namespace: monitoring
-monitoring_release_name: kube-prometheus
-monitoring_chart_repo_name: prometheus-community
-monitoring_chart_repo_url: https://prometheus-community.github.io/helm-charts
-monitoring_chart_version: "85.0.3"
-
-# Identifiants admin Grafana : fournis via un SealedSecret (aucun mot de passe en clair ici).
-# Le contrôleur Sealed Secrets déchiffre infra/monitoring/grafana-sealedsecret.yaml en un Secret
-# référencé par Grafana (grafana.admin.existingSecret).
-# Génération : scripts/seal-grafana-secret.sh (voir docs/sealed-secrets.md).
-grafana_admin_secret_name: grafana-admin-credentials
-
-# StorageClass utilisée par le PVC Prometheus. Doit exister avant l'install.
-monitoring_storage_class: local-path
-monitoring_prometheus_pvc_size: 20Gi
-monitoring_prometheus_retention: 15d
-
-# Hostnames nip.io (HTTPRoute dédié par service, path /)
-monitoring_nip_suffix: "{{ master_public_ip | replace('.', '-') }}.nip.io"
-monitoring_grafana_hostname: "grafana.{{ monitoring_nip_suffix }}"
-monitoring_prometheus_hostname: "prometheus.{{ monitoring_nip_suffix }}"
 
 master_public_ip: "{{ hostvars[groups['k8s_master'][0]].ansible_host }}"
 master_internal_ip: "{{ hostvars[groups['k8s_master'][0]].internal_ip }}"
 worker1_internal_ip: "{{ hostvars[groups['k8s_workers'][0]].ansible_host }}"
 worker2_internal_ip: "{{ hostvars[groups['k8s_workers'][1]].ansible_host }}"
 worker3_internal_ip: "{{ hostvars[groups['k8s_workers'][2]].ansible_host }}"
-
-# local-path-provisioner (Rancher) — installé si la StorageClass n'existe pas.
-local_path_provisioner_manifest_url: "https://raw.githubusercontent.com/rancher/local-path-provisioner/v0.0.36/deploy/local-path-storage.yaml"
-local_path_provisioner_rollout_timeout: 300s
-
-
-sealed_secrets_controller_namespace: kube-system
-sealed_secrets_controller_version: "0.32.2"
-sealed_secrets_chart_version: "2.17.7"

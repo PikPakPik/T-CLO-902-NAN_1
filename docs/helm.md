@@ -17,8 +17,10 @@ Dans ce projet, Helm sert à déployer l'application Laravel et sa base de donn�
   - `migration-job.yaml` : Job de migration BDD exécuté après installation/mise à jour (Helm Hook post-install/post-upgrade).
   - `sealedsecret.yaml` : SealedSecret contenant APP_KEY et le mot de passe BDD (mode recommandé).
   - `secrets.yaml` : Secret Kubernetes en clair (mode legacy, désactivé par défaut).
-  - `registry-secret.yaml` : Secret pour l'authentification au registry GHCR.
-  - `httproute.yaml` : HTTPRoute Gateway API pour exposer l'app via Envoy Gateway.
+  - `hpa.yaml` : HorizontalPodAutoscaler (optionnel, si `autoscaling.enabled: true`).
+  - `httproute.yaml` : HTTPRoute Gateway API pour exposer l'app via le Gateway public (Traefik).
+
+> Le Secret d'authentification au registry GHCR (`ghcr-registry`) n'est **pas** un template du chart : il est créé au déploiement par Ansible (`kubectl create secret docker-registry`) à partir de `GITHUB_USER` / `GITHUB_TOKEN`, puis référencé via `imagePullSecrets`.
 
 > Les secrets applicatifs passent par **Sealed Secrets** (`values.sealed.yaml`). Les credentials GHCR pour le pull d'image sont injectés au déploiement via `GITHUB_USER` / `GITHUB_TOKEN`. Voir `docs/sealed-secrets.md`.
 
@@ -26,7 +28,7 @@ Dans ce projet, Helm sert à déployer l'application Laravel et sa base de donn�
 
 ## Prérequis locaux
 
-- [`kubeseal`](https://github.com/bitnami-labs/sealed-secrets/releases) CLI installé (version identique au controller, voir `ansible/group_vars/all.yml` → `sealed_secrets_chart_version`).
+- [`kubeseal`](https://github.com/bitnami-labs/sealed-secrets/releases) CLI installé (version identique au controller, voir `ansible/roles/sealed_secrets/defaults/main.yml` → `sealed_secrets_chart_version`).
 
 ```bash
 VERSION="0.32.2"

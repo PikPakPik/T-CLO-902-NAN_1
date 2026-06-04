@@ -4,7 +4,7 @@ Ce document explique comment installer et utiliser `kubeseal` avec le cluster Ku
 
 ## 1) Installer le contrôleur Sealed Secrets dans le cluster
 
-Le playbook Ansible installe automatiquement le contrôleur sur le master via Helm (`kubernetes.core.helm`, chart `sealed-secrets`, namespace `kube-system`).
+Le playbook Ansible installe automatiquement le contrôleur via Helm (`kubernetes.core.helm`, chart `sealed-secrets`, namespace `kube-system`). Le playbook s'exécute **depuis** le master (qui possède le kubeconfig admin), mais le **pod du contrôleur n'est pas épinglé** : sans `nodeSelector` ni tolération du taint control-plane, le scheduler le place sur un **worker quelconque**. Son emplacement est sans importance (déchiffrement cluster-wide).
 
 Depuis `ansible/` :
 
