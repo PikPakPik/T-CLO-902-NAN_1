@@ -25,3 +25,30 @@
 
   roles:
     - k8s_worker
+
+- name: "Labelliser les noeuds"
+  hosts: k8s_master
+  gather_facts: no
+  become: yes
+  tags: [labels, cluster]
+
+  tasks:
+    - name: "[MASTER] Attendre que worker3 soit présent dans le cluster"
+      shell: |
+        KUBECONFIG={{ k8s_master_config }} kubectl get nodes -o wide | grep "{{ worker3_internal_ip }}"
+      register: worker3_ready
+      until: worker3_ready.rc == 0
+      retries: 30
+      delay: 10
+      changed_when: false
+
+    - name: "[MASTER] Récupérer le nom du noeud worker3"
+      shell: |
+        KUBECONFIG={{ k8s_master_config }} kubectl get nodes -o wide | awk '/{{ worker3_internal_ip }}/{print $1}'
+      register: worker3_nodename
+      changed_when: false
+
+    - name: "[MASTER] Labelliser worker3 comme noeud de base de données"
+      shell: |
+        KUBECONFIG={{ k8s_master_config }} \
+          kubectl label node {{ worker3_nodename.stdout }} kubequest/role=database --overwrite

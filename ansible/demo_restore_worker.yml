@@ -1,0 +1,44 @@
+---
+- name: "Demo - Restauration des workers"
+  hosts: k8s_master
+  gather_facts: no
+  become: yes
+  vars:
+    namespace: sample-app
+
+  tasks:
+    - name: "[DEMO] Récupérer les nodes cordonnés"
+      ansible.builtin.shell: |
+        KUBECONFIG={{ k8s_master_config }} kubectl get nodes --no-headers \
+          | awk '/SchedulingDisabled/{print $1}'
+      register: cordoned_nodes
+      changed_when: false
+
+    - name: "[DEMO] Uncordonner les nodes"
+      ansible.builtin.shell: |
+        KUBECONFIG={{ k8s_master_config }} kubectl uncordon {{ item }}
+      loop: "{{ cordoned_nodes.stdout_lines }}"
+      when: cordoned_nodes.stdout_lines | length > 0
+
+    - name: "[DEMO] Attendre que les replicas app soient Ready"
+      ansible.builtin.shell: |
+        KUBECONFIG={{ k8s_master_config }} kubectl wait \
+          --for=condition=ready pod \
+          -l app.kubernetes.io/name=sample-app \
+          -n {{ namespace }} \
+          --timeout=120s
+      changed_when: false
+
+    - name: "[DEMO] Etat final des pods"
+      ansible.builtin.shell: |
+        KUBECONFIG={{ k8s_master_config }} kubectl get pods -n {{ namespace }} -o wide
+      register: pods_final
+      changed_when: false
+
+    - name: "[DEMO] Afficher l'état final"
+      ansible.builtin.debug:
+        msg: "{{ pods_final.stdout_lines }}"
+
+    - name: "[DEMO] Résumé"
+      ansible.builtin.debug:
+        msg: "Cluster restauré — tous les workers sont de nouveau schedulables."

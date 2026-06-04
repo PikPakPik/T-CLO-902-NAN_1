@@ -29,6 +29,8 @@ spec:
       labels:
         app: {{ include "sample-app.fullname" . }}-mysql
     spec:
+      nodeSelector:
+        kubequest/role: database
       containers:
         - name: mysql
           image: "mysql:8.0"

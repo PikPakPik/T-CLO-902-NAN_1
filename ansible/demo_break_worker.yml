@@ -1,0 +1,109 @@
+---
+# Usage :
+#   Avec reschedule : ansible-playbook demo_break_worker.yml --tags with-reschedule
+#   Sans reschedule : ansible-playbook demo_break_worker.yml --tags without-reschedule
+- name: "Demo - Mise en panne d'un worker"
+  hosts: k8s_master
+  gather_facts: no
+  become: yes
+  vars:
+    namespace: sample-app
+
+  tasks:
+    - name: "[DEMO] Etat initial des pods"
+      tags: [with-reschedule, without-reschedule]
+      ansible.builtin.shell: |
+        KUBECONFIG={{ k8s_master_config }} kubectl get pods -n {{ namespace }} -o wide
+      register: pods_initial
+      changed_when: false
+
+    - name: "[DEMO] Afficher l'état initial"
+      tags: [with-reschedule, without-reschedule]
+      ansible.builtin.debug:
+        msg: "{{ pods_initial.stdout_lines }}"
+
+    - name: "[DEMO] Identifier le node MySQL"
+      tags: [with-reschedule, without-reschedule]
+      ansible.builtin.shell: |
+        KUBECONFIG={{ k8s_master_config }} kubectl get pods -n {{ namespace }} \
+          -l app=app-sample-app-mysql --no-headers \
+          -o custom-columns=NODE:.spec.nodeName
+      register: mysql_node
+      changed_when: false
+
+    - name: "[DEMO] Identifier les nodes des replicas app"
+      tags: [with-reschedule, without-reschedule]
+      ansible.builtin.shell: |
+        KUBECONFIG={{ k8s_master_config }} kubectl get pods -n {{ namespace }} \
+          -l app.kubernetes.io/name=sample-app --no-headers \
+          -o custom-columns=NODE:.spec.nodeName
+      register: app_nodes_raw
+      changed_when: false
+
+    - name: "[DEMO] Calculer le node cible (replica app sans MySQL)"
+      tags: [with-reschedule, without-reschedule]
+      ansible.builtin.set_fact:
+        target_node: "{{ app_nodes_raw.stdout_lines | reject('equalto', mysql_node.stdout) | first }}"
+        mysql_node_name: "{{ mysql_node.stdout }}"
+
+    - name: "[DEMO] Lister les workers"
+      tags: [without-reschedule]
+      ansible.builtin.shell: |
+        KUBECONFIG={{ k8s_master_config }} \
+          kubectl get nodes -l '!node-role.kubernetes.io/control-plane' \
+          --no-headers -o custom-columns=NAME:.metadata.name
+      register: workers_raw
+      changed_when: false
+
+    - name: "[DEMO] Calculer les nodes à cordonner"
+      tags: [without-reschedule]
+      ansible.builtin.set_fact:
+        cordon_nodes: >-
+          {{ workers_raw.stdout_lines
+             | reject('equalto', target_node)
+             | reject('equalto', mysql_node_name)
+             | list }}
+
+    - name: "[DEMO] Cordonner les autres workers"
+      tags: [without-reschedule]
+      ansible.builtin.shell: |
+        KUBECONFIG={{ k8s_master_config }} kubectl cordon {{ item }}
+      loop: "{{ cordon_nodes }}"
+
+    - name: "[DEMO] Drainer le node cible"
+      tags: [with-reschedule, without-reschedule]
+      ansible.builtin.shell: |
+        KUBECONFIG={{ k8s_master_config }} kubectl drain {{ target_node }} \
+          --ignore-daemonsets \
+          --delete-emptydir-data \
+          --force \
+          --grace-period=10
+
+    - name: "[DEMO] Etat après drain"
+      tags: [with-reschedule, without-reschedule]
+      ansible.builtin.shell: |
+        KUBECONFIG={{ k8s_master_config }} kubectl get pods -n {{ namespace }} -o wide
+      register: pods_after
+      changed_when: false
+
+    - name: "[DEMO] Afficher l'état après drain"
+      tags: [with-reschedule, without-reschedule]
+      ansible.builtin.debug:
+        msg: "{{ pods_after.stdout_lines }}"
+
+    - name: "[DEMO] Résumé (avec reschedule)"
+      tags: [with-reschedule]
+      ansible.builtin.debug:
+        msg:
+          - "Node drainé : {{ target_node }}"
+          - "Le pod expulsé sera replanifié automatiquement sur un autre node."
+          - "Lancer demo_restore_worker.yml pour rétablir le cluster."
+
+    - name: "[DEMO] Résumé (sans reschedule)"
+      tags: [without-reschedule]
+      ansible.builtin.debug:
+        msg:
+          - "Node drainé     : {{ target_node }}"
+          - "Nodes cordonnés : {{ cordon_nodes | join(', ') }}"
+          - "Le pod expulsé est en Pending — seul le replica sur {{ mysql_node_name }} répond."
+          - "Lancer demo_restore_worker.yml pour rétablir le cluster."

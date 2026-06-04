@@ -36,6 +36,14 @@ resources:
     cpu: 500m
     memory: 512Mi
 
+affinity:
+  podAntiAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      - labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: sample-app
+        topologyKey: kubernetes.io/hostname
+
 serviceAccount:
   create: true
 
