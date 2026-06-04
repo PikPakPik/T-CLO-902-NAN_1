@@ -2,6 +2,26 @@
 # Prérequis pour l'accès HTTP /grafana/ et /prometheus/ : install_gateway-api.yml + deploy_gateway.yml
 # (le rôle installe les CRDs Gateway API si elles manquent, mais pas Envoy ni le Gateway public)
 
+- name: "Vérifier les prérequis locaux (monitoring)"
+  hosts: localhost
+  become: false
+  gather_facts: false
+  vars:
+    ansible_become: false
+    grafana_sealed_secret_file: "{{ playbook_dir }}/../infra/monitoring/grafana-sealedsecret.yaml"
+  tasks:
+    - name: "[MONITORING] Vérifier que le SealedSecret Grafana existe"
+      ansible.builtin.stat:
+        path: "{{ grafana_sealed_secret_file }}"
+      register: grafana_sealed_secret_stat
+
+    - name: "[MONITORING] Erreur si grafana-sealedsecret.yaml est absent"
+      ansible.builtin.fail:
+        msg: >-
+          infra/monitoring/grafana-sealedsecret.yaml est introuvable.
+          Générez-le avec ./scripts/seal-grafana-secret.sh (voir docs/sealed-secrets.md).
+      when: not grafana_sealed_secret_stat.stat.exists
+
 - name: "Déployer la stack monitoring (Prometheus + Grafana + node-exporter)"
   hosts: k8s_master
   gather_facts: yes
