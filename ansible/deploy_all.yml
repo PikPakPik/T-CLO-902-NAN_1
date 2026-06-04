@@ -1,6 +1,6 @@
 ---
 # Déploiement complet :
-#   connectivité → cluster → sealed-secrets → Gateway/Envoy → sample-app → monitoring → Headlamp
+#   connectivité → cluster → sealed-secrets → Traefik → monitoring → Headlamp → sample-app
 #
 #   ansible-playbook deploy_all.yml
 #
@@ -32,10 +32,6 @@
   ansible.builtin.import_playbook: deploy_traefik.yml
   tags: [gateway, gateway-deploy]
 
-- name: Déployer sample-app (Helm)
-  ansible.builtin.import_playbook: deploy_app.yml
-  tags: [app]
-
 - name: Déployer la stack monitoring
   ansible.builtin.import_playbook: deploy_monitoring.yml
   tags: [monitoring]
@@ -43,3 +39,7 @@
 - name: Déployer Headlamp
   ansible.builtin.import_playbook: deploy_headlamp.yml
   tags: [headlamp]
+
+- name: Déployer sample-app (Helm)
+  ansible.builtin.import_playbook: deploy_app.yml
+  tags: [app]
