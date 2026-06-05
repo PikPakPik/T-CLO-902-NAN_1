@@ -10,7 +10,10 @@ Dans ce projet, Sealed Secrets protège :
 
 - les secrets applicatifs de `sample-app` (`APP_KEY` Laravel, mot de passe MySQL) → `charts/sample-app/values.sealed.yaml` ;
 - les identifiants admin de Grafana → `infra/monitoring/grafana-sealedsecret.yaml` ;
-- les secrets de Dex IDP → `infra/dex/dex-sealedsecret.yaml` (voir `scripts/seal-dex-secrets.sh`).
+- les secrets de Dex IDP (hash bcrypt admin, client secrets OAuth) → `infra/dex/dex-sealedsecret.yaml` ;
+- le client secret OAuth Grafana/Dex → `infra/monitoring/grafana-oauth-sealedsecret.yaml`.
+
+> La procédure de scellement de ces deux fichiers (ils partagent le même `GRAFANA_CLIENT_SECRET`) est décrite dans [`docs/dex.md`](dex.md).
 
 ## Architecture
 
@@ -88,13 +91,10 @@ secrets:
     dbPassword: "Ag..."  # mot de passe MySQL chiffré
 ```
 
-Pour (re)générer ce fichier, utiliser le script dédié (nécessite `ansible/sealed-secrets.pem`) :
-
-```bash
-export APP_KEY='base64:…'   # ex. php artisan key:generate --show
-export DB_PASSWORD='…'
-./scripts/seal-sample-app-secrets.sh
-```
+Pour (re)générer les valeurs chiffrées `appKey` / `dbPassword`, sceller chaque secret avec
+`kubeseal` (voir la [procédure rapide](#procédure-rapide-mémo) en bas de page) puis reporter les
+chaînes obtenues dans `encryptedData` de `values.sealed.yaml`. Le secret cible se nomme
+`app-sample-app-app-secrets` (namespace `sample-app`, scope `strict`).
 
 > `sealed-secrets.example.yaml` est uniquement un **exemple de structure** : ne pas le confondre avec `values.sealed.yaml`. Voir aussi [`docs/helm.md`](helm.md).
 

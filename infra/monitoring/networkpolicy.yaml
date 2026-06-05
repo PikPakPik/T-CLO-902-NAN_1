@@ -1,0 +1,99 @@
+# Segmentation réseau de la stack monitoring (appliquée par Calico).
+#
+# Approche : policies CIBLÉES sur les pods sensibles (Prometheus, Alertmanager,
+# kube-state-metrics) — et non un default-deny de tout le namespace. Sélectionner un pod
+# avec une policy Ingress le bascule en « deny par défaut » SAUF les sources autorisées,
+# sans toucher aux autres pods ni au flux Traefik(hostNetwork) -> Grafana.
+#
+# Effet : un pod d'un AUTRE namespace (ex. sample-app) ne peut plus joindre Prometheus,
+# Alertmanager ni kube-state-metrics. Les flux internes légitimes restent ouverts.
+#
+# ⚠️ node-exporter n'est PAS ici : il tourne en hostNetwork (port 9100 sur l'IP du nœud),
+#    hors de portée des NetworkPolicy Kubernetes. Restriction au niveau hôte : voir docs/monitoring.md.
+---
+# Prometheus :9090 — n'accepte que Grafana (requêtes) et lui-même (self-scrape /metrics + reloader).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: prometheus-restrict-ingress
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/part-of: kubequest
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: prometheus
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: grafana
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+      ports:
+        - port: 9090
+          protocol: TCP
+        - port: 8080
+          protocol: TCP
+---
+# Alertmanager :9093 — n'accepte que Prometheus (envoi d'alertes + scrape) et les peers Alertmanager (mesh).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: alertmanager-restrict-ingress
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/part-of: kubequest
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: alertmanager
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+      ports:
+        - port: 9093
+          protocol: TCP
+        - port: 8080
+          protocol: TCP
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: alertmanager
+      ports:
+        - port: 9094
+          protocol: TCP
+        - port: 9094
+          protocol: UDP
+        - port: 9093
+          protocol: TCP
+---
+# kube-state-metrics :8080 — scrapé uniquement par Prometheus.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: kube-state-metrics-restrict-ingress
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/part-of: kubequest
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: kube-state-metrics
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+      ports:
+        - port: 8080
+          protocol: TCP

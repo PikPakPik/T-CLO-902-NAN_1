@@ -17,7 +17,7 @@
       fail:
         msg: >-
           Le fichier values.sealed.yaml est introuvable : {{ values_sealed_file }}.
-          Générez-le avec ./scripts/seal-sample-app-secrets.sh (voir docs/sealed-secrets.md).
+          Scellez les secrets applicatifs avec kubeseal en suivant docs/sealed-secrets.md.
       when: not values_sealed_stat.stat.exists
 
     - name: "[APP] Vérifier que gitops/sample-app/values.yaml existe"

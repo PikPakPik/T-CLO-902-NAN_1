@@ -58,15 +58,7 @@ Copier l'output (de `-----BEGIN CERTIFICATE-----` à `-----END CERTIFICATE-----`
 
 ### 1. Secrets applicatifs (APP_KEY, mot de passe BDD)
 
-Générer `values.sealed.yaml` avec le script (nécessite `ansible/sealed-secrets.pem`) :
-
-```bash
-export APP_KEY='base64:…'   # ex. php artisan key:generate --show
-export DB_PASSWORD='…'      # identique au mot de passe utilisateur BDD
-./scripts/seal-sample-app-secrets.sh
-```
-
-Le script génère `charts/sample-app/values.sealed.yaml` avec les valeurs chiffrées. Commiter ce fichier (safe pour Git). Ne pas créer `sealed-secrets.yaml` manuellement — `sealed-secrets.example.yaml` est uniquement un exemple de structure.
+Sceller `APP_KEY` et le mot de passe BDD avec `kubeseal`, puis reporter les chaînes chiffrées dans `encryptedData` de `charts/sample-app/values.sealed.yaml` (secret `app-sample-app-app-secrets`, namespace `sample-app`, scope `strict`). Commiter ce fichier (safe pour Git). Ne pas créer `sealed-secrets.yaml` manuellement — `sealed-secrets.example.yaml` est uniquement un exemple de structure. Procédure complète : [`docs/sealed-secrets.md`](sealed-secrets.md).
 
 ### 2. Credentials GHCR (pull d'image)
 

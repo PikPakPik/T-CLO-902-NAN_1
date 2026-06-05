@@ -30,6 +30,7 @@ automatisé avec **Ansible**, et hébergeant :
 | Déploiement Helm (sample-app) | [docs/helm.md](docs/helm.md) |
 | metrics-server & autoscaling (HPA) | [docs/metrics-server.md](docs/metrics-server.md) |
 | Monitoring (Prometheus/Grafana) | [docs/monitoring.md](docs/monitoring.md) |
+| Dex IDP (SSO Grafana, comptes locaux) | [docs/dex.md](docs/dex.md) |
 | Headlamp | [docs/headlamp.md](docs/headlamp.md) |
 | Backups MySQL | [docs/mysql-backup.md](docs/mysql-backup.md) |
 | Flux de déploiement CI/CD | [docs/deployment-flow.md](docs/deployment-flow.md) |
@@ -73,7 +74,7 @@ automatisé avec **Ansible**, et hébergeant :
    ├─────────────┤ ├─────────────┤ ├──────────────┤
    │ Monitoring  │ │    apps     │ │    apps      │
    │ Prom/Grafana│ │   node-exp  │ │ SealedSecret │
-   │ Headlamp    │ │             │ │   node-exp   │
+   │ Headlamp    │ │   Dex IDP   │ │   node-exp   │
    │ node-exp    │ │             │ │              │
    └─────────────┘ └─────────────┘ └──────────────┘
 ```
@@ -151,7 +152,7 @@ chmod 600 ~/.ssh/kubequest.pem
 │                            #   monitoring, headlamp, sealed_secrets, ...
 ├── charts/sample-app/       # Chart Helm de l'application Laravel + MySQL
 ├── gitops/sample-app/       # Values GitOps (image, réplicas, HPA)
-├── infra/                   # Manifests Kustomize (traefik, monitoring, headlamp)
+├── infra/                   # Manifests Kustomize (traefik, dex, monitoring, headlamp)
 ├── resources/sample-app-master/  # Code source Laravel
 ├── .github/workflows/       # CI/CD (build image, publish chart, deploy)
 └── docs/                    # Documentation détaillée par composant
@@ -221,13 +222,16 @@ ansible-playbook -i ansible/inventory.yml ansible/deploy_all.yml --tags sealed-s
 # 4.4 Traefik (CRDs Gateway API + Helm + Gateway public)
 ansible-playbook -i ansible/inventory.yml ansible/deploy_all.yml --tags gateway
 
-# 4.5 Stack monitoring (Prometheus / Grafana / Alertmanager)
+# 4.5 Dex IDP (SSO — comptes locaux ; prérequis : SealedSecrets scellés — voir docs/dex.md)
+ansible-playbook -i ansible/inventory.yml ansible/deploy_all.yml --tags dex
+
+# 4.6 Stack monitoring (Prometheus / Grafana / Alertmanager + SSO Grafana via Dex)
 ansible-playbook -i ansible/inventory.yml ansible/deploy_all.yml --tags monitoring
 
-# 4.6 Headlamp (dashboard)
+# 4.7 Headlamp (dashboard)
 ansible-playbook -i ansible/inventory.yml ansible/deploy_all.yml --tags headlamp
 
-# 4.7 Application Laravel + MySQL
+# 4.8 Application Laravel + MySQL
 ansible-playbook -i ansible/inventory.yml ansible/deploy_all.yml --tags app
 ```
 
@@ -240,6 +244,7 @@ Chaque étape dispose aussi de son playbook dédié, équivalent :
 | `metrics-server` | `deploy_metrics_server.yml` |
 | `sealed-secrets` | `deploy_sealed_secrets.yml` |
 | `gateway` | `install_traefik.yml` + `deploy_traefik.yml` |
+| `dex` | `deploy_dex.yml` |
 | `monitoring` | `deploy_monitoring.yml` |
 | `headlamp` | `deploy_headlamp.yml` |
 | `app` | `deploy_app.yml` |

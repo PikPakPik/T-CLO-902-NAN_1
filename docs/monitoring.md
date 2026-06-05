@@ -6,9 +6,8 @@ La stack de monitoring est déployée via un seul chart Helm (`kube-prometheus-s
 
 ```mermaid
 flowchart LR
-    user[🌐 Utilisateur\nnavigateur] -->|grafana.*.nip.io\nprometheus.*.nip.io| gw
+    user[🌐 Utilisateur\nnavigateur] -->|grafana.*.nip.io| gw
     gw[Gateway public-gateway\nns traefik-system] --> grafanaRoute[HTTPRoute grafana]
-    gw --> promRoute[HTTPRoute prometheus]
 
     subgraph worker1[node: worker1]
         grafanaSvc[Service ClusterIP\nkube-prometheus-grafana :80]
@@ -19,7 +18,7 @@ flowchart LR
         operator[prometheus-operator]
         ksm[kube-state-metrics]
         grafanaRoute --> grafanaSvc --> grafana
-        promRoute --> promSvc --> prom
+        grafana -->|requêtes internes| promSvc --> prom
     end
 
     subgraph allNodes[tous les nœuds]
@@ -91,14 +90,21 @@ ansible-playbook deploy_all.yml
 
 ## Accès via Gateway (après `deploy_traefik.yml`)
 
-Le routage se fait **par hostname** (un HTTPRoute dédié par service, chemin `/`). Les hostnames sont dérivés de l'IP publique du master via [nip.io](https://nip.io) (`monitoring_nip_suffix` = `<IP_master_avec_tirets>.nip.io`).
+Le routage se fait **par hostname** (un HTTPRoute dédié, chemin `/`). Le hostname est dérivé de l'IP publique du master via [nip.io](https://nip.io) (`monitoring_nip_suffix` = `<IP_master_avec_tirets>.nip.io`).
 
-| Service    | URL (depuis Internet)                         |
-| ---------- | --------------------------------------------- |
-| Grafana    | `http://grafana.<IP_master_tirets>.nip.io/`    |
-| Prometheus | `http://prometheus.<IP_master_tirets>.nip.io/` |
+| Service    | Accès                                                                 |
+| ---------- | --------------------------------------------------------------------- |
+| Grafana    | `http://grafana.<IP_master_tirets>.nip.io/` (depuis Internet)         |
+| Prometheus | **Interne uniquement** — pas d'HTTPRoute (voir ci-dessous)            |
 
 > Exemple avec l'IP `15.237.15.14` : `http://grafana.15-237-15-14.nip.io/`.
+
+**Prometheus n'est volontairement pas exposé publiquement** (aucune authentification native). Grafana l'interroge via le service ClusterIP interne. Pour y accéder ponctuellement :
+
+```bash
+kubectl port-forward -n monitoring svc/kube-prometheus-kube-prome-prometheus 9090:9090
+# puis http://localhost:9090
+```
 
 Prérequis : port **TCP 80** ouvert sur le security group du master, et Gateway `public-gateway` (namespace `traefik-system`) déployé via `deploy_traefik.yml`.
 
@@ -110,3 +116,47 @@ Identifiants par défaut :
 - **mot de passe** : valeur scellée dans `grafana-admin-credentials` (voir `docs/sealed-secrets.md`)
 
 À la première connexion, Grafana propose de changer le mot de passe. Prometheus est exposé **sans authentification** ; ne pas l'exposer publiquement sans protection supplémentaire (reverse-proxy, security group restrictif).
+
+### SSO via Dex (OAuth)
+
+Grafana propose en plus une connexion **« Sign in with Dex »** (OAuth générique) adossée aux
+comptes locaux Dex — le mapping de rôle se fait par email (admin → `Admin`, sinon `Viewer`).
+Le formulaire admin natif ci-dessus reste actif comme accès de secours. Détails et mise en
+place : [docs/dex.md](dex.md).
+
+## Segmentation réseau (NetworkPolicy)
+
+Par défaut, **tout pod du cluster** peut joindre Prometheus, Alertmanager ou kube-state-metrics
+(trafic est-ouest ouvert). Pour limiter ces services à leurs seuls interlocuteurs légitimes, le
+manifest [`infra/monitoring/networkpolicy.yaml`](../infra/monitoring/networkpolicy.yaml) applique
+(via **Calico**) des NetworkPolicies **ciblées** :
+
+| Service cible | Ingress autorisé depuis |
+| ------------- | ----------------------- |
+| Prometheus `:9090` | Grafana (requêtes) + Prometheus (self-scrape) |
+| Alertmanager `:9093` | Prometheus (alertes + scrape) + peers Alertmanager (`:9094`) |
+| kube-state-metrics `:8080` | Prometheus |
+
+Tout le reste (ex. un pod `sample-app`) est **refusé**. Les policies sont ciblées (sélecteur de
+pod) plutôt qu'un *default-deny* de namespace, pour ne pas casser les scrapes internes ni le flux
+Traefik (hostNetwork) → Grafana. Elles sont appliquées par `kubectl apply -k infra/monitoring/`
+(rôle `monitoring`).
+
+> **Caveat `kubectl port-forward`** : le port-forward vers Prometheus provient du nœud (kubelet),
+> pas d'un pod ; selon Calico il peut être bloqué par la policy. Si c'est le cas, ajouter un
+> `from: [{ ipBlock: { cidr: <IP_nœud>/32 } }]` sur la policy Prometheus.
+
+### node-exporter (hostNetwork) — restriction au niveau hôte
+
+node-exporter tourne en **`hostNetwork: true`** (port **9100** sur l'IP de chaque nœud). Les
+NetworkPolicy Kubernetes **ne s'y appliquent pas**. Pour restreindre l'accès à `:9100` au seul
+Prometheus, il faut agir au niveau **hôte** :
+
+- **AWS Security Group** : n'autoriser `:9100` que depuis l'IP/SG du nœud qui héberge Prometheus
+  (worker1) ; ou
+- **Calico `GlobalNetworkPolicy` + `HostEndpoints`** : politique sur les interfaces hôte
+  (configuration plus avancée — un `HostEndpoint` mal défini peut couper la connectivité du nœud,
+  à tester prudemment).
+
+node-exporter n'expose que des **métriques système en lecture seule**, sur le réseau des nœuds
+(non routé depuis l'extérieur) — sa sensibilité est moindre que celle de Prometheus.

@@ -1,0 +1,64 @@
+---
+# Values Helm pour Dex IDP (chart dex/dex).
+# Étape 1 : comptes locaux uniquement (staticPasswords). Pas de TLS (HTTP via Traefik).
+# Les valeurs sensibles viennent du SealedSecret « {{ dex_secret_name }} » (injecté via envFrom)
+# et sont lues DIRECTEMENT depuis l'environnement avec hashFromEnv / secretEnv — surtout pas via
+# l'expansion $VAR : un hash bcrypt contient des « $ » qui seraient massacrés par l'expansion.
+
+replicaCount: 1
+
+# Stockage en mémoire : suffisant car toute la config est statique (clients + comptes).
+# Conséquence : les refresh tokens sont perdus à chaque redémarrage (acceptable ici).
+config:
+  issuer: "http://{{ dex_hostname }}"
+
+  storage:
+    type: memory
+
+  web:
+    http: "0.0.0.0:{{ dex_http_port }}"
+
+  oauth2:
+    skipApprovalScreen: true
+
+  enablePasswordDB: true
+
+  staticPasswords:
+    - email: "{{ dex_admin_email }}"
+      # Hash bcrypt lu directement depuis l'env ADMIN_PASSWORD_HASH (SealedSecret dex-secrets).
+      hashFromEnv: ADMIN_PASSWORD_HASH
+      username: "{{ dex_admin_username }}"
+      userID: "{{ dex_admin_user_id }}"
+    - email: "{{ dex_user_email }}"
+      # Hash bcrypt lu directement depuis l'env USER_PASSWORD_HASH (SealedSecret dex-secrets).
+      hashFromEnv: USER_PASSWORD_HASH
+      username: "{{ dex_user_username }}"
+      userID: "{{ dex_user_user_id }}"
+
+  staticClients:
+    # --- Grafana : SSO actif dès maintenant ---
+    - id: "{{ dex_grafana_client_id }}"
+      name: Grafana
+      secretEnv: GRAFANA_CLIENT_SECRET
+      redirectURIs:
+        - "http://{{ dex_grafana_redirect_host }}/login/generic_oauth"
+    # --- Headlamp : client préparé, câblage OIDC reporté à la phase cert-manager/TLS ---
+    - id: "{{ dex_headlamp_client_id }}"
+      name: Headlamp
+      secretEnv: HEADLAMP_CLIENT_SECRET
+      redirectURIs:
+        - "http://{{ dex_headlamp_redirect_host }}/oidc-callback"
+
+# Injection des secrets (hash bcrypt + client secrets) comme variables d'environnement.
+envFrom:
+  - secretRef:
+      name: "{{ dex_secret_name }}"
+
+service:
+  type: ClusterIP
+  ports:
+    http:
+      port: {{ dex_http_port }}
+      targetPort: http
+
+# Pas de connecteurs externes à cette étape (Microsoft Entra ID viendra avec TLS).
