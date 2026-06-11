@@ -1,0 +1,24 @@
+---
+- name: '[CERT_MANAGER] Installer cert-manager via Helm'
+  kubernetes.core.helm:
+    kubeconfig: '{{ k8s_master_config }}'
+    name: cert-manager
+    chart_ref: '{{ cert_manager_chart_repo }}'
+    release_namespace: '{{ cert_manager_namespace }}'
+    create_namespace: yes
+    chart_version: '{{ cert_manager_chart_version }}'
+    values:
+      installCRDs: true
+      config:
+        apiVersion: controller.config.cert-manager.io/v1alpha1
+        kind: ControllerConfiguration
+        enableGatewayAPI: true
+
+
+- name: '[CERT_MANAGER] Attendre que le Deployment cert-manager soit ready'
+  ansible.builtin.shell: |
+    export KUBECONFIG={{ k8s_master_config }}
+    kubectl -n {{ cert_manager_namespace }} rollout status deploy/cert-manager --timeout=180s
+  args:
+    executable: /bin/bash
+  changed_when: false

@@ -1,0 +1,9 @@
+# Variables par défaut pour le rôle du cert-manager
+
+cert_manager_namespace: cert-manager
+cert_manager_chart_repo: oci://quay.io/jetstack/charts/cert-manager
+cert_manager_chart_name: cert-manager
+cert_manager_chart_version: v1.20.2
+
+cert_manager_kustomize_src: '{{ playbook_dir }}/../infra/cert-manager'
+cert_manager_letsencrypt_email: "t-clo-902-nan-1@epitech.eu"

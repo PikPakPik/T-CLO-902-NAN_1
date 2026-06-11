@@ -13,3 +13,15 @@ spec:
       allowedRoutes:
         namespaces:
           from: All  # Permet aux routes de tous les namespaces de s'y brancher
+    
+    - name: websecure
+      protocol: HTTPS
+      port: 443
+      allowedRoutes:
+        namespaces:
+          from: All
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            name: apps-tls

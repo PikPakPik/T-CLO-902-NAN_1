@@ -14,9 +14,12 @@ ingress:
 httpRoute:
   enabled: true
   publicAddress: ""
+  hostnames:
+    - app.15-237-15-14.nip.io
   parentRefs:
     - name: public-gateway
       namespace: traefik-system
+      sectionName: websecure
 
 service:
   type: ClusterIP

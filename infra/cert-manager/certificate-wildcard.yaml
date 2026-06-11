@@ -1,0 +1,16 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: apps-tls
+  namespace: traefik-system
+spec:
+  secretName: apps-tls
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  dnsNames:
+    - "15-237-15-14.nip.io"
+    - "app.15-237-15-14.nip.io"
+    - "headlamp.15-237-15-14.nip.io"
+    - "grafana.15-237-15-14.nip.io"
+    - "dex.15-237-15-14.nip.io"

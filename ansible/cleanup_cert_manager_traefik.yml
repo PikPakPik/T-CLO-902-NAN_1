@@ -1,0 +1,145 @@
+---
+- name: Nettoyer cert-manager et Traefik pour repartir au propre
+  hosts: k8s_master
+  gather_facts: no
+  tasks:
+    - name: '[CLEANUP] Supprimer tous les Certificates'
+      ansible.builtin.shell: |
+        export KUBECONFIG={{ k8s_master_config }}
+        kubectl delete certificate --all -A --ignore-not-found
+      args:
+        executable: /bin/bash
+      changed_when: true
+
+    - name: '[CLEANUP] Supprimer tous les CertificateRequests'
+      ansible.builtin.shell: |
+        export KUBECONFIG={{ k8s_master_config }}
+        kubectl delete certificaterequest --all -A --ignore-not-found
+      args:
+        executable: /bin/bash
+      changed_when: true
+
+    - name: '[CLEANUP] Supprimer tous les Orders ACME'
+      ansible.builtin.shell: |
+        export KUBECONFIG={{ k8s_master_config }}
+        kubectl delete order --all -A --ignore-not-found
+      args:
+        executable: /bin/bash
+      changed_when: true
+
+    - name: '[CLEANUP] Supprimer tous les Challenges ACME'
+      ansible.builtin.shell: |
+        export KUBECONFIG={{ k8s_master_config }}
+        kubectl delete challenge --all -A --ignore-not-found
+      args:
+        executable: /bin/bash
+      changed_when: true
+
+    - name: '[CLEANUP] Supprimer les pods HTTP solver'
+      ansible.builtin.shell: |
+        export KUBECONFIG={{ k8s_master_config }}
+        kubectl delete pods -l acme.cert-manager.io/http01-solver=true --all-namespaces --force --grace-period=0 --ignore-not-found
+      args:
+        executable: /bin/bash
+      changed_when: true
+
+    - name: '[CLEANUP] Supprimer les Secrets de comptes ACME'
+      ansible.builtin.shell: |
+        export KUBECONFIG={{ k8s_master_config }}
+        kubectl -n cert-manager delete secret letsencrypt-prod-account-key --ignore-not-found
+        kubectl -n cert-manager delete secret letsencrypt-staging-account-key --ignore-not-found
+      args:
+        executable: /bin/bash
+      changed_when: true
+
+    - name: '[CLEANUP] Supprimer les Secrets TLS'
+      ansible.builtin.shell: |
+        export KUBECONFIG={{ k8s_master_config }}
+        kubectl -n traefik-system delete secret apps-tls --ignore-not-found
+      args:
+        executable: /bin/bash
+      changed_when: true
+
+    - name: '[CLEANUP] Supprimer les ClusterIssuers'
+      ansible.builtin.shell: |
+        export KUBECONFIG={{ k8s_master_config }}
+        kubectl delete clusterissuer letsencrypt-prod letsencrypt-staging --ignore-not-found
+      args:
+        executable: /bin/bash
+      changed_when: true
+
+    - name: '[CLEANUP] Supprimer le déploiement Traefik'
+      ansible.builtin.shell: |
+        export KUBECONFIG={{ k8s_master_config }}
+        kubectl -n traefik-system delete deployment traefik --force --grace-period=0 --ignore-not-found
+      args:
+        executable: /bin/bash
+      changed_when: true
+
+    - name: '[CLEANUP] Supprimer tous les ReplicaSets Traefik'
+      ansible.builtin.shell: |
+        export KUBECONFIG={{ k8s_master_config }}
+        kubectl -n traefik-system delete rs --all --ignore-not-found
+      args:
+        executable: /bin/bash
+      changed_when: true
+
+    - name: '[CLEANUP] Supprimer tous les pods Traefik'
+      ansible.builtin.shell: |
+        export KUBECONFIG={{ k8s_master_config }}
+        kubectl -n traefik-system delete pods -l app.kubernetes.io/name=traefik --force --grace-period=0 --ignore-not-found
+      args:
+        executable: /bin/bash
+      changed_when: true
+
+    - name: '[CLEANUP] Attendre que tout soit nettoyé'
+      ansible.builtin.pause:
+        seconds: 10
+
+    - name: '[CLEANUP] Vérifier qu il ne reste plus de pods solver'
+      ansible.builtin.shell: |
+        export KUBECONFIG={{ k8s_master_config }}
+        kubectl get pods -A | grep solver || echo "Aucun solver trouvé"
+      args:
+        executable: /bin/bash
+      register: solver_check
+      changed_when: false
+
+    - name: '[CLEANUP] Afficher le résultat de la vérification'
+      ansible.builtin.debug:
+        msg: "{{ solver_check.stdout_lines }}"
+
+    - name: '[CLEANUP] Vérifier qu il ne reste plus de pods Traefik'
+      ansible.builtin.shell: |
+        export KUBECONFIG={{ k8s_master_config }}
+        kubectl -n traefik-system get pods
+      args:
+        executable: /bin/bash
+      register: traefik_check
+      changed_when: false
+
+    - name: '[CLEANUP] Afficher les pods restants dans traefik-system'
+      ansible.builtin.debug:
+        msg: "{{ traefik_check.stdout_lines }}"
+
+    - name: '[CLEANUP] Vérifier les ports en écoute'
+      ansible.builtin.shell: |
+        netstat -tlnp | grep -E ':(80|443)' | grep LISTEN || echo "Ports 80 et 443 libres"
+      args:
+        executable: /bin/bash
+      register: ports_check
+      changed_when: false
+
+    - name: '[CLEANUP] Afficher les ports en écoute'
+      ansible.builtin.debug:
+        msg: "{{ ports_check.stdout_lines }}"
+
+    - name: '[CLEANUP] Résumé du nettoyage'
+      ansible.builtin.debug:
+        msg:
+          - "=== NETTOYAGE TERMINÉ ==="
+          - "Vous pouvez maintenant réinstaller :"
+          - "1. ansible-playbook -i inventory.yml install_traefik.yml"
+          - "2. ansible-playbook -i inventory.yml deploy_traefik.yml"
+          - "3. ansible-playbook -i inventory.yml install_cert_manager.yml"
+          - "4. ansible-playbook -i inventory.yml deploy_cert_manager.yml"

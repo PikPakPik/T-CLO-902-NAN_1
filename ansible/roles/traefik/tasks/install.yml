@@ -88,6 +88,11 @@
           expose:
             default: true
           protocol: TCP
+        metrics:
+          port: 9101
+          expose:
+            default: true
+          protocol: TCP
 
       # Pas de Service Kubernetes (on utilise hostNetwork)
       service:

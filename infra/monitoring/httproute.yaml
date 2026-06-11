@@ -10,6 +10,7 @@ spec:
   parentRefs:
     - name: public-gateway
       namespace: traefik-system
+      sectionName: websecure
   hostnames:
     - grafana.15-237-15-14.nip.io
   rules:

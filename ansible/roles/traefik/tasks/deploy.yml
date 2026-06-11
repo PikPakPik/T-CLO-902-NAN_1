@@ -6,10 +6,10 @@
     mode: '0644'
     directory_mode: '0755'
 
-- name: '[TRAEFIK] Appliquer le Gateway public (GatewayClass créé par Helm)'
+- name: '[TRAEFIK] Appliquer le Gateway public (GatewayClass créé par Helm) et la redirection HTTP -> HTTPS'
   ansible.builtin.shell: |
     set -euo pipefail
-    KUBECONFIG="{{ k8s_master_config }}" kubectl apply -f /tmp/kubequest/infra/traefik/gateway-public.yaml
+    KUBECONFIG="{{ k8s_master_config }}" kubectl apply -k /tmp/kubequest/infra/traefik/
   args:
     executable: /bin/bash
 

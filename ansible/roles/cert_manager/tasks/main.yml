@@ -1,0 +1,6 @@
+---
+- import_tasks: install.yml
+  tags: [cert-manager, install]
+
+- import_tasks: deploy.yml
+  tags: [cert-manager, deploy]

@@ -1,0 +1,7 @@
+---
+- name: Installer cert-manager
+  hosts: k8s_master
+  gather_facts: no
+  roles:
+    - role: cert_manager
+      tags: [install]

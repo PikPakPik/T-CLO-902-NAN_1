@@ -1,0 +1,31 @@
+---
+- name: '[CERT_MANAGER] Copier les manifests cert-manager sur le master'
+  ansible.builtin.copy:
+    src: '{{ cert_manager_kustomize_src }}/'
+    dest: /tmp/kubequest/infra/cert-manager/
+    mode: '0644'
+    directory_mode: '0755'
+  register: cert_manager_manifests_copied
+
+- name: '[CERT_MANAGER] Appliquer les ClusterIssuers et Certificates'
+  ansible.builtin.shell: |
+    set -euo pipefail
+    KUBECONFIG="{{ k8s_master_config }}" kubectl apply -k /tmp/kubequest/infra/cert-manager/
+  args:
+    executable: /bin/bash
+  # when: cert_manager_manifests_copied.changed  # N'applique que si les fichiers ont changé
+
+- name: '[CERT_MANAGER] Attendre que le certificat apps-tls soit prêt'
+  ansible.builtin.shell: |
+    export KUBECONFIG="{{ k8s_master_config }}"
+    kubectl wait -n traefik-system certificate/apps-tls --for=condition=Ready --timeout=5m
+  args:
+    executable: /bin/bash
+
+- name: '[CERT_MANAGER] Vérifier que les ClusterIssuers sont prêts'
+  ansible.builtin.shell: |
+    export KUBECONFIG="{{ k8s_master_config }}"
+    kubectl get clusterissuer
+  args:
+    executable: /bin/bash
+  changed_when: false

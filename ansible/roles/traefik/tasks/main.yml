@@ -1,0 +1,6 @@
+---
+- import_tasks: install.yml
+  tags: [traefik, install]
+
+- import_tasks: deploy.yml
+  tags: [traefik, deploy]
