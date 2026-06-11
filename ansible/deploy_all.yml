@@ -49,6 +49,10 @@
   ansible.builtin.import_playbook: deploy_monitoring.yml
   tags: [monitoring]
 
+- name: Déployer la stack de logging (Loki + Promtail)
+  ansible.builtin.import_playbook: deploy_loki.yml
+  tags: [logging]
+  
 - name: Déployer Headlamp
   ansible.builtin.import_playbook: deploy_headlamp.yml
   tags: [headlamp]

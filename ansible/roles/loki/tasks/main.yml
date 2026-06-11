@@ -1,0 +1,68 @@
+---
+- name: "[LOKI] Créer le répertoire des values Helm sur le master"
+  ansible.builtin.file:
+    path: /tmp/kubequest/loki
+    state: directory
+    mode: "0755"
+
+- name: "[LOKI] Générer les values Helm Loki sur le master"
+  ansible.builtin.template:
+    src: loki-values.yaml.j2
+    dest: /tmp/kubequest/loki/loki-values.yaml
+    mode: "0644"
+
+- name: "[LOKI] Ajouter le repo Helm {{ loki_chart_repo_name }}"
+  ansible.builtin.command:
+    argv:
+      - helm
+      - repo
+      - add
+      - "{{ loki_chart_repo_name }}"
+      - "{{ loki_chart_repo_url }}"
+  register: loki_helm_repo_add
+  failed_when: >-
+    loki_helm_repo_add.rc != 0
+    and ('already exists' not in (loki_helm_repo_add.stderr | default('')))
+  changed_when: "'already exists' not in (loki_helm_repo_add.stderr | default(''))"
+
+- name: "[LOKI] Mettre à jour le cache des repos Helm"
+  ansible.builtin.command: helm repo update
+  changed_when: false
+
+- name: "[LOKI] Installer / mettre à jour Loki via Helm"
+  kubernetes.core.helm:
+    kubeconfig: "{{ k8s_master_config }}"
+    name: "{{ loki_release_name }}"
+    chart_ref: loki
+    chart_repo_url: "{{ loki_chart_repo_url }}"
+    chart_version: "{{ loki_chart_version }}"
+    release_namespace: "{{ loki_namespace }}"
+    create_namespace: true
+    update_repo_cache: false
+    values_files:
+      - /tmp/kubequest/loki/loki-values.yaml
+    wait: true
+    timeout: 5m
+
+- name: "[LOKI] Installer / mettre à jour Promtail via Helm"
+  kubernetes.core.helm:
+    kubeconfig: "{{ k8s_master_config }}"
+    name: "{{ promtail_release_name }}"
+    chart_ref: promtail
+    chart_repo_url: "{{ loki_chart_repo_url }}"
+    chart_version: "{{ promtail_chart_version }}"
+    release_namespace: "{{ loki_namespace }}"
+    create_namespace: true
+    update_repo_cache: false
+    set_values:
+      - value: "config.clients[0].url=http://loki.{{ loki_namespace }}.svc.cluster.local:3100/loki/api/v1/push"
+    wait: true
+    timeout: 5m
+
+- name: "[LOKI] Attendre que Loki soit prêt"
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ k8s_master_config }}"
+    kubectl -n {{ loki_namespace }} rollout status statefulset/loki --timeout=120s
+  args:
+    executable: /bin/bash

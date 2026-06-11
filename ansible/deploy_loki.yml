@@ -1,0 +1,8 @@
+---
+- name: "Déployer la stack de logging (Loki + Promtail)"
+  hosts: k8s_master
+  gather_facts: yes
+  become: yes
+
+  roles:
+    - loki

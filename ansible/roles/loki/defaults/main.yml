@@ -1,0 +1,11 @@
+---
+loki_namespace: monitoring
+loki_release_name: loki
+promtail_release_name: promtail
+
+loki_chart_repo_name: grafana
+loki_chart_repo_url: https://grafana.github.io/helm-charts
+loki_chart_version: "7.0.0"
+promtail_chart_version: "6.17.1"
+
+loki_persistence_size: 5Gi
