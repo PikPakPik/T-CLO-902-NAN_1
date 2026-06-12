@@ -1,27 +1,4 @@
 ---
-- name: "[HEADLAMP] Résoudre le nom du node Kubernetes worker1"
-  kubernetes.core.k8s_info:
-    kubeconfig: "{{ k8s_master_config }}"
-    api_version: v1
-    kind: Node
-  register: headlamp_nodes
-  changed_when: false
-
-- name: "[HEADLAMP] Définir le node cible (worker1)"
-  ansible.builtin.set_fact:
-    headlamp_target_node_name: >-
-      {{
-        headlamp_nodes.resources
-        | json_query("[?status.addresses[?address=='" + worker1_internal_ip + "']].metadata.name")
-        | first
-        | default('')
-      }}
-
-- name: "[HEADLAMP] Vérifier qu'on a trouvé le node Kubernetes cible"
-  ansible.builtin.fail:
-    msg: "Impossible de trouver le node Kubernetes correspondant à worker1 (ip={{ worker1_internal_ip }})"
-  when: headlamp_target_node_name | length == 0
-
 - name: "[HEADLAMP] Ajouter le repo Helm headlamp"
   ansible.builtin.command:
     argv:
@@ -40,6 +17,19 @@
   ansible.builtin.command: helm repo update
   changed_when: false
 
+- name: "[HEADLAMP] Créer le répertoire des manifests Headlamp sur le master"
+  ansible.builtin.file:
+    path: /tmp/kubequest/infra/headlamp
+    state: directory
+    mode: "0755"
+
+- name: "[HEADLAMP] Copier les manifests Headlamp sur le master (depuis la machine de contrôle)"
+  ansible.builtin.copy:
+    src: "{{ headlamp_kustomize_src }}/"
+    dest: /tmp/kubequest/infra/headlamp/
+    mode: "0644"
+    directory_mode: "0755"
+
 - name: "[HEADLAMP] Installer / mettre à jour Headlamp via Helm"
   kubernetes.core.helm:
     kubeconfig: "{{ k8s_master_config }}"
@@ -49,18 +39,8 @@
     release_namespace: "{{ headlamp_namespace }}"
     create_namespace: true
     update_repo_cache: false
-    values:
-      clusterRoleBinding:
-        create: false
-      nodeSelector:
-        kubernetes.io/hostname: "{{ headlamp_target_node_name }}"
-
-- name: "[HEADLAMP] Copier les manifests Kustomize sur le master"
-  ansible.builtin.copy:
-    src: "{{ headlamp_kustomize_src }}/"
-    dest: /tmp/kubequest/infra/headlamp/
-    mode: "0644"
-    directory_mode: "0755"
+    values_files:
+      - /tmp/kubequest/infra/headlamp/values.yaml
 
 - name: "[HEADLAMP] Supprimer le ClusterRoleBinding existant (roleRef immuable)"
   kubernetes.core.k8s:

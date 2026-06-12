@@ -10,3 +10,8 @@ master_internal_ip: "{{ hostvars[groups['k8s_master'][0]].internal_ip }}"
 worker1_internal_ip: "{{ hostvars[groups['k8s_workers'][0]].ansible_host }}"
 worker2_internal_ip: "{{ hostvars[groups['k8s_workers'][1]].ansible_host }}"
 worker3_internal_ip: "{{ hostvars[groups['k8s_workers'][2]].ansible_host }}"
+
+nip_suffix: "{{ master_public_ip | replace('.', '-') }}.nip.io"
+dex_hostname: "dex.{{ nip_suffix }}"
+headlamp_hostname: "headlamp.{{ nip_suffix }}"
+grafana_hostname: "grafana.{{ monitoring_nip_suffix }}"

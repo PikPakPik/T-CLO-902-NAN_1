@@ -46,7 +46,7 @@ flowchart LR
 | kube-state-metrics   | Expose l'état des objets Kubernetes (pods, deployments, etc.) en métriques | worker1                             |
 | node-exporter        | Expose les métriques système (CPU, RAM, disque, réseau) de chaque nœud   | DaemonSet sur **tous** les nœuds      |
 
-> Note : le nom du nœud worker1 est résolu depuis `inventory.yml` (IP interne `10.0.3.198`). `local-path-provisioner` est aussi épinglé sur worker1 pour que les PVC monitoring soient provisionnés au bon endroit.
+> Note : le `nodeSelector` worker1 est codé en dur (nom AWS `ip-10-0-3-198.eu-west-3.compute.internal`) dans les manifests statiques. `local-path-provisioner` est aussi épinglé sur worker1 (`infra/local-path-storage/`) pour que les PVC monitoring soient provisionnés au bon endroit.
 
 ## Déploiement via Ansible (recommandé)
 
@@ -59,13 +59,12 @@ ansible-playbook -i inventory.yml deploy_monitoring.yml
 
 Le playbook effectue les étapes suivantes :
 
-1. Résout le nom du nœud Kubernetes `worker1` à partir de son IP interne (`inventory.yml`).
-2. Installe **local-path-provisioner** si la StorageClass `local-path` n'existe pas, l'épingle sur worker1 et la marque comme StorageClass par défaut.
-3. Ajoute le repo Helm `prometheus-community` puis met à jour le cache des repos.
-4. Applique le `SealedSecret` Grafana (`infra/monitoring/grafana-sealedsecret.yaml`) **avant** Helm.
-5. Génère le fichier `values.yaml` à partir du template et installe le chart `kube-prometheus-stack`.
-6. Installe les CRD Gateway API si elles sont absentes.
-7. Applique les HTTPRoutes (`infra/monitoring/`, via Kustomize) vers le Gateway `public-gateway`.
+1. Applique **local-path-provisioner** via `kubectl apply -k infra/local-path-storage/` (manifest amont vendorisé + patches kustomize : épinglage worker1, StorageClass par défaut), puis attend que le Deployment soit `Ready`.
+2. Ajoute le repo Helm `prometheus-community` puis met à jour le cache des repos.
+3. Crée le namespace `monitoring` (`infra/monitoring/namespace.yaml`) et applique les `SealedSecret` Grafana / OAuth **avant** Helm.
+4. Installe le chart `kube-prometheus-stack` avec `infra/monitoring/values.yaml`.
+5. Installe les CRD Gateway API si elles sont absentes.
+6. Applique le reste des manifests (`infra/monitoring/`, via Kustomize : HTTPRoutes, NetworkPolicies) vers le Gateway `public-gateway`.
 
 Déploiement complet (connectivité + cluster + metrics-server + sealed-secrets + Traefik + monitoring + headlamp + app) :
 
@@ -75,16 +74,22 @@ ansible-playbook deploy_all.yml
 
 > Note : la StorageClass `local-path` est nécessaire pour fournir des PersistentVolumes à Prometheus (rétention de 15 jours, 20 Gi), Grafana (5 Gi) et Alertmanager (2 Gi).
 
-## Variables principales (`ansible/roles/monitoring/defaults/main.yml`)
+## Configuration
 
-| Variable                          | Valeur par défaut         | Description                                      |
+La **configuration applicative** de la stack (Grafana SSO/datasources, tailles et rétention des PVC, hostnames, ciblage worker1) vit dans `infra/monitoring/values.yaml` — **source unique, statique**, partagée avec ArgoCD. Le rôle Ansible se contente de **copier `infra/monitoring/` sur le master** puis lancer `helm ... -f infra/monitoring/values.yaml` et `kubectl apply -k`.
+
+| Réglage                           | Valeur                    | Où                                               |
 | --------------------------------- | ------------------------- | ------------------------------------------------ |
-| `monitoring_namespace`            | `monitoring`              | Namespace dans lequel la stack est déployée      |
-| `monitoring_chart_version`        | `85.0.3`                  | Version du chart `kube-prometheus-stack`         |
-| `monitoring_storage_class`        | `local-path`              | StorageClass utilisée pour les PVC               |
-| `monitoring_prometheus_pvc_size`  | `20Gi`                    | Taille du volume Prometheus                      |
-| `monitoring_prometheus_retention` | `15d`                     | Durée de rétention des métriques Prometheus      |
-| `grafana_admin_secret_name`       | `grafana-admin-credentials` | Secret admin Grafana (via SealedSecret)        |
+| Taille volume Prometheus          | `20Gi`                    | `infra/monitoring/values.yaml`                   |
+| Rétention métriques Prometheus    | `15d`                     | `infra/monitoring/values.yaml`                   |
+| Secret admin Grafana              | `grafana-admin-credentials` | `infra/monitoring/values.yaml` (via SealedSecret) |
+| Ciblage des pods stateful         | `nodeSelector` sur le nom AWS de worker1 (`ip-10-0-3-198.eu-west-3.compute.internal`) | `infra/monitoring/values.yaml` |
+
+> ⚠️ Le `nodeSelector` est codé en dur sur le nom du node worker1. Si le node est recréé ou change d'IP interne, mettre à jour les 6 occurrences dans `infra/monitoring/values.yaml` **ainsi que** le patch `infra/local-path-storage/kustomization.yaml` (sinon pods `Pending`). Nom courant : `kubectl get nodes -o wide`.
+
+Le **stockage** (local-path-provisioner) est lui aussi entièrement déclaratif dans `infra/local-path-storage/` : manifest amont `v0.0.36` vendorisé + patches kustomize (épinglage worker1, annotation StorageClass par défaut). Ansible applique simplement `kubectl apply -k`.
+
+Les **variables Ansible résiduelles** (`ansible/roles/monitoring/defaults/main.yml`) ne couvrent plus que la **mécanique de déploiement** : `monitoring_namespace`, `monitoring_release_name`, coordonnées/version du chart (`85.0.3`), `monitoring_storage_class`, `local_path_storage_kustomize_src`, `local_path_provisioner_rollout_timeout`, `monitoring_kustomize_src`.
 
 > ⚠️ **Important** : le `SealedSecret` Grafana est versionné dans `infra/monitoring/grafana-sealedsecret.yaml` (données chiffrées). Pour le (re)générer, suivre la procédure de `docs/sealed-secrets.md`. Aucun mot de passe en clair dans le dépôt.
 

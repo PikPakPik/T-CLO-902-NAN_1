@@ -1,3 +1,4 @@
+---
 deploymentMode: SingleBinary
 loki:
   auth_enabled: false
@@ -18,7 +19,7 @@ singleBinary:
   replicas: 1
   persistence:
     enabled: true
-    size: {{ loki_persistence_size }}
+    size: 5Gi
 read:
   replicas: 0
 write:

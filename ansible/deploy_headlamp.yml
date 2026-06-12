@@ -4,10 +4,5 @@
   gather_facts: yes
   become: yes
 
-  vars:
-    headlamp_target_worker: worker1
-    # headlamp_kustomize_src défini par défaut dans roles/headlamp/defaults/main.yml
-
   roles:
     - headlamp
-

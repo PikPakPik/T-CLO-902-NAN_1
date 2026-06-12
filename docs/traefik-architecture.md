@@ -52,7 +52,10 @@ Source : https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.5.1
 
 ### 2. Traefik (Helm chart v40.2.0)
 
-Installé dans le namespace `traefik-system` avec la configuration suivante :
+Installé dans le namespace `traefik-system`. Les **valeurs Helm** vivent dans
+[`infra/traefik/values.yaml`](../infra/traefik/values.yaml) — **source unique, statique**,
+partagée avec ArgoCD. Le rôle Ansible se contente de copier `infra/traefik/` sur le master
+puis lance `helm ... -f infra/traefik/values.yaml`.
 
 | Paramètre | Valeur | Rôle |
 |-----------|--------|------|
@@ -60,9 +63,13 @@ Installé dans le namespace `traefik-system` avec la configuration suivante :
 | `ports.web.port` | `80` | Entrypoint HTTP principal |
 | `service.enabled` | `false` | Pas de Service K8s (hostNetwork) |
 | `hostNetwork` | `true` | Bind direct sur les ports de l'hôte |
-| `nodeSelector` | `kubernetes.io/hostname: <master>` | Épingle sur le master |
+| `nodeSelector` | `kubernetes.io/hostname: ip-10-0-3-214.eu-west-3.compute.internal` | Épingle sur le master |
 | `tolerations` | `node-role.kubernetes.io/control-plane` | Autorise le scheduling sur le control-plane |
 | `securityContext.runAsUser` | `0` | Nécessaire pour binder le port 80 |
+
+> ⚠️ Le `nodeSelector` est codé en dur sur le nom AWS du nœud master. Si le node est recréé
+> ou change d'IP interne, mettre à jour `infra/traefik/values.yaml` (sinon pod Traefik `Pending`).
+> Nom courant : `kubectl get nodes -o wide`.
 
 ### 3. GatewayClass
 

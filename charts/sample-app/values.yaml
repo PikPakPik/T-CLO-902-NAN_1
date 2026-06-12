@@ -15,6 +15,7 @@ httpRoute:
   enabled: true
   publicAddress: ""
   hostnames:
+    - 15-237-15-14.nip.io
     - app.15-237-15-14.nip.io
   parentRefs:
     - name: public-gateway

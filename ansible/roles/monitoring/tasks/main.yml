@@ -1,117 +1,32 @@
 ---
-- name: "[MONITORING] Résoudre le nom du node Kubernetes worker1"
-  kubernetes.core.k8s_info:
-    kubeconfig: "{{ k8s_master_config }}"
-    api_version: v1
-    kind: Node
-  register: monitoring_nodes
-  changed_when: false
+- name: "[MONITORING] Créer le répertoire des manifests local-path sur le master"
+  ansible.builtin.file:
+    path: /tmp/kubequest/infra/local-path-storage
+    state: directory
+    mode: "0755"
 
-- name: "[MONITORING] Définir le node cible (worker1)"
-  ansible.builtin.set_fact:
-    monitoring_target_node_name: >-
-      {{
-        monitoring_nodes.resources
-        | json_query("[?status.addresses[?address=='" + worker1_internal_ip + "']].metadata.name")
-        | first
-        | default('')
-      }}
+- name: "[MONITORING] Copier les manifests local-path sur le master (depuis la machine de contrôle)"
+  ansible.builtin.copy:
+    src: "{{ local_path_storage_kustomize_src }}/"
+    dest: /tmp/kubequest/infra/local-path-storage/
+    mode: "0644"
+    directory_mode: "0755"
 
-- name: "[MONITORING] Vérifier qu'on a trouvé le node Kubernetes worker1"
-  ansible.builtin.fail:
-    msg: "Impossible de trouver le node Kubernetes correspondant à worker1 (ip={{ worker1_internal_ip }})"
-  when: monitoring_target_node_name | length == 0
-
-- name: "[MONITORING] Vérifier si la StorageClass {{ monitoring_storage_class }} existe"
-  kubernetes.core.k8s_info:
-    kubeconfig: "{{ k8s_master_config }}"
-    api_version: storage.k8s.io/v1
-    kind: StorageClass
-    name: "{{ monitoring_storage_class }}"
-  register: monitoring_storageclass_info
-  failed_when: false
-
-- name: "[MONITORING] Vérifier l'état du Deployment local-path-provisioner"
-  kubernetes.core.k8s_info:
-    kubeconfig: "{{ k8s_master_config }}"
-    api_version: apps/v1
-    kind: Deployment
-    name: local-path-provisioner
-    namespace: local-path-storage
-  register: monitoring_local_path_deploy
-  failed_when: false
-
-- name: "[MONITORING] Déterminer si local-path doit être installé ou réparé"
-  ansible.builtin.set_fact:
-    monitoring_need_local_path: >-
-      {{
-        (monitoring_storageclass_info.resources | default([]) | length == 0)
-        or (monitoring_local_path_deploy.resources | default([]) | length == 0)
-        or (
-          monitoring_local_path_deploy.resources | default([])
-          | json_query('[0].status.readyReplicas')
-          | default(0, true) | int < 1
-        )
-      }}
-
-- name: "[MONITORING] Appliquer le manifest local-path-provisioner"
-  when: monitoring_need_local_path | bool
-  kubernetes.core.k8s:
-    kubeconfig: "{{ k8s_master_config }}"
-    src: "{{ local_path_provisioner_manifest_url }}"
-    state: present
-    wait: false
-
-- name: "[MONITORING] Scheduler local-path sur worker1 (PVC monitoring)"
-  when: >-
-    monitoring_need_local_path | bool
-    or (monitoring_local_path_deploy.resources | default([]) | length > 0)
-  kubernetes.core.k8s:
-    kubeconfig: "{{ k8s_master_config }}"
-    api_version: apps/v1
-    kind: Deployment
-    name: local-path-provisioner
-    namespace: local-path-storage
-    merge_type: strategic-merge
-    definition:
-      spec:
-        template:
-          spec:
-            nodeSelector:
-              kubernetes.io/hostname: "{{ monitoring_target_node_name }}"
+- name: "[MONITORING] Appliquer local-path-provisioner + StorageClass par défaut (kustomize)"
+  ansible.builtin.shell: |
+    set -euo pipefail
+    KUBECONFIG="{{ k8s_master_config }}" kubectl apply -k /tmp/kubequest/infra/local-path-storage/
+  args:
+    executable: /bin/bash
 
 - name: "[MONITORING] Attendre que local-path-provisioner soit Ready"
-  when: monitoring_need_local_path | bool
   ansible.builtin.shell: |
     set -euo pipefail
     export KUBECONFIG="{{ k8s_master_config }}"
     kubectl -n local-path-storage rollout status deploy/local-path-provisioner --timeout={{ local_path_provisioner_rollout_timeout }}
   args:
     executable: /bin/bash
-
-- name: "[MONITORING] Marquer {{ monitoring_storage_class }} comme StorageClass par défaut"
-  kubernetes.core.k8s:
-    kubeconfig: "{{ k8s_master_config }}"
-    api_version: storage.k8s.io/v1
-    kind: StorageClass
-    name: "{{ monitoring_storage_class }}"
-    merge_type: merge
-    definition:
-      metadata:
-        annotations:
-          storageclass.kubernetes.io/is-default-class: "true"
-
-- name: "[MONITORING] Créer le répertoire des values Helm sur le master"
-  ansible.builtin.file:
-    path: /tmp/kubequest/monitoring
-    state: directory
-    mode: "0755"
-
-- name: "[MONITORING] Générer les values Helm sur le master"
-  ansible.builtin.template:
-    src: values.yaml.j2
-    dest: /tmp/kubequest/monitoring/values.yaml
-    mode: "0644"
+  changed_when: false
 
 - name: "[MONITORING] Débloquer un release Helm coincé (pending-install/upgrade)"
   ansible.builtin.shell: |
@@ -158,9 +73,7 @@
 - name: "[MONITORING] Créer le namespace {{ monitoring_namespace }} (avant les SealedSecrets)"
   kubernetes.core.k8s:
     kubeconfig: "{{ k8s_master_config }}"
-    api_version: v1
-    kind: Namespace
-    name: "{{ monitoring_namespace }}"
+    src: /tmp/kubequest/infra/monitoring/namespace.yaml
     state: present
 
 - name: "[MONITORING] Appliquer le SealedSecret Grafana (avant Helm)"
@@ -186,7 +99,7 @@
     create_namespace: true
     update_repo_cache: false
     values_files:
-      - /tmp/kubequest/monitoring/values.yaml
+      - /tmp/kubequest/infra/monitoring/values.yaml
     wait: true
     timeout: 10m
 

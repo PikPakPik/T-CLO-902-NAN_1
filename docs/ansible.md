@@ -80,10 +80,11 @@ Les variables sont réparties en deux endroits :
 | ---- | -------------- |
 | `k8s_common` | `k8s_version` (`v1.35`), `containerd_config_dir`, `containerd_config_file` |
 | `k8s_master` | `calico_version` (`v3.31.4`), `calico_manifest_url` |
-| `metrics_server` | `metrics_server_manifest_url` (`v0.7.2`), `metrics_server_namespace`, `rollout_timeout` |
+| `metrics_server` | `metrics_server_kustomize_src`, `metrics_server_namespace`, `rollout_timeout` (manifest `v0.7.2` + patch → `infra/metrics-server/`) |
 | `sealed_secrets` | `sealed_secrets_controller_version` (`0.32.2`), `sealed_secrets_chart_version` (`2.17.7`), repo |
-| `traefik` | `traefik_chart_version` (`v40.2.0`), `traefik_namespace`, `gateway_name` (`public-gateway`), `traefik_kustomize_src` |
-| `monitoring` | `monitoring_namespace`, `monitoring_chart_version` (`85.0.3`), tailles/rétention PVC, hostnames nip.io, `grafana_admin_secret_name`, `local_path_provisioner_*`, `monitoring_kustomize_src` |
+| `traefik` | `traefik_chart_version` (`v40.2.0`), `traefik_namespace`, `gateway_name` (`public-gateway`), `traefik_kustomize_src` (config Helm → `infra/traefik/values.yaml`) |
+| `cert_manager` | `cert_manager_chart_version` (`v1.20.2`), `cert_manager_namespace`, `cert_manager_kustomize_src` (config Helm → `infra/cert-manager/values.yaml` ; ClusterIssuers/Certificate → `infra/cert-manager/`) |
+| `monitoring` | `monitoring_namespace`, `monitoring_chart_version` (`85.0.3`), `monitoring_storage_class`, `local_path_storage_kustomize_src` (manifest `v0.0.36` + patches → `infra/local-path-storage/`), `local_path_provisioner_rollout_timeout`, `monitoring_kustomize_src` (config applicative → `infra/monitoring/values.yaml`) |
 | `headlamp` | `headlamp_namespace`, `headlamp_chart_repo_url`, `headlamp_kustomize_src` |
 
 > Règle : une variable utilisée par **un seul** rôle vit dans ses `defaults` ; une variable
@@ -101,12 +102,10 @@ Les variables sont réparties en deux endroits :
 | `metrics_server` | metrics-server (HPA / `kubectl top`) | [metrics-server](metrics-server.md) |
 | `sealed_secrets` | Contrôleur Sealed Secrets (Helm) | [sealed-secrets](sealed-secrets.md) |
 | `traefik` | Traefik + Gateway API (CRDs, GatewayClass, Gateway) | [traefik-architecture](traefik-architecture.md) |
+| `cert_manager` | cert-manager (Helm) + ClusterIssuers Let's Encrypt + Certificate wildcard TLS | — |
 | `monitoring` | kube-prometheus-stack + HTTPRoutes | [monitoring](monitoring.md) |
 | `headlamp` | Headlamp (Helm + Kustomize) | [headlamp](headlamp.md) |
 | `test_connectivity` | Vérification SSH/hostnames des nœuds | ci-dessous |
-
-> Le répertoire `roles/cert_manager/` est un **squelette vide** (jamais référencé, aucun TLS
-> dans le projet qui est HTTP/80). Il n'est pas documenté volontairement.
 
 ## Catalogue des playbooks
 

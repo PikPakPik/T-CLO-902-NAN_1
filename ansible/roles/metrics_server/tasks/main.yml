@@ -1,26 +1,23 @@
 ---
-- name: "[METRICS-SERVER] Appliquer le manifest officiel"
-  kubernetes.core.k8s:
-    kubeconfig: "{{ k8s_master_config }}"
-    src: "{{ metrics_server_manifest_url }}"
-    state: present
-    wait: false
+- name: "[METRICS-SERVER] Créer le répertoire des manifests sur le master"
+  ansible.builtin.file:
+    path: /tmp/kubequest/infra/metrics-server
+    state: directory
+    mode: "0755"
 
-- name: "[METRICS-SERVER] Activer --kubelet-insecure-tls (clusters kubeadm)"
+- name: "[METRICS-SERVER] Copier les manifests sur le master (depuis la machine de contrôle)"
+  ansible.builtin.copy:
+    src: "{{ metrics_server_kustomize_src }}/"
+    dest: /tmp/kubequest/infra/metrics-server/
+    mode: "0644"
+    directory_mode: "0755"
+
+- name: "[METRICS-SERVER] Appliquer le manifest + patch --kubelet-insecure-tls (kustomize)"
   ansible.builtin.shell: |
     set -euo pipefail
-    export KUBECONFIG="{{ k8s_master_config }}"
-    args="$(kubectl get deployment metrics-server -n {{ metrics_server_namespace }} \
-      -o jsonpath='{.spec.template.spec.containers[0].args}' 2>/dev/null || true)"
-    if [[ "$args" != *"kubelet-insecure-tls"* ]]; then
-      kubectl patch deployment metrics-server -n {{ metrics_server_namespace }} --type=json -p='[
-        {"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--kubelet-insecure-tls"}
-      ]'
-    fi
+    KUBECONFIG="{{ k8s_master_config }}" kubectl apply -k /tmp/kubequest/infra/metrics-server/
   args:
     executable: /bin/bash
-  register: metrics_server_patch
-  changed_when: metrics_server_patch.stdout != ""
 
 - name: "[METRICS-SERVER] Attendre que metrics-server soit Ready"
   ansible.builtin.shell: |

@@ -1,6 +1,4 @@
 ---
-# Variables par défaut pour le rôle Traefik
-
 traefik_namespace: traefik-system
 traefik_chart_repo: https://traefik.github.io/charts
 traefik_chart_name: traefik

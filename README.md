@@ -65,17 +65,17 @@ automatisé avec **Ansible**, et hébergeant :
    │ MASTER  (control-plane)   15.237.15.14        │
    │   • kube-apiserver / etcd / scheduler         │
    │   • Traefik (hostNetwork :80)                 │
-   └───────────────┬───────────────────────────────┘
-                   │  réseau interne VPC (Calico)
+   │   • SealedSecret                              │
+   └───────────────────┬───────────────────────────┘
+                       │  réseau interne VPC (Calico)
        ┌───────────────┼───────────────┐
        ▼               ▼               ▼
    ┌─────────────┐ ┌─────────────┐ ┌──────────────┐
    │  Worker 1   │ │  Worker 2   │ │  Worker 3    │
    ├─────────────┤ ├─────────────┤ ├──────────────┤
    │ Monitoring  │ │    apps     │ │    apps      │
-   │ Prom/Grafana│ │   node-exp  │ │ SealedSecret │
-   │ Headlamp    │ │   Dex IDP   │ │   node-exp   │
-   │ node-exp    │ │             │ │              │
+   │ Prom/Grafana│ │   node-exp  │ │   node-exp   │
+   │   node-exp  │ │   Dex IDP   │ │   Headlamp   │
    └─────────────┘ └─────────────┘ └──────────────┘
 ```
 

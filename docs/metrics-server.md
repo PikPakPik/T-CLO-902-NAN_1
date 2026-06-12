@@ -17,10 +17,11 @@ ansible-playbook -i inventory.yml deploy_all.yml --tags metrics-server
 
 Étapes du rôle :
 
-1. Applique le **manifeste officiel** `components.yaml` (pas de Helm).
-2. Patche le Deployment pour ajouter **`--kubelet-insecure-tls`** (idempotent).
-3. Attend le rollout (`rollout status`, timeout configurable).
-4. Vérifie que l'API Metrics répond (`kubectl top nodes`, avec retries).
+1. Copie `infra/metrics-server/` sur le master, puis applique `kubectl apply -k` : le **manifeste officiel vendorisé** `components.yaml` + le patch déclaratif ajoutant **`--kubelet-insecure-tls`** (pas de Helm, plus de `kubectl patch` impératif).
+2. Attend le rollout (`rollout status`, timeout configurable).
+3. Vérifie que l'API Metrics répond (`kubectl top nodes`, avec retries).
+
+> La config (manifeste + patch) vit dans `infra/metrics-server/` — **source unique, statique**, appliquée à l'identique par Ansible et par ArgoCD (même modèle que Dex, monitoring et sealed-secrets).
 
 > **Pourquoi `--kubelet-insecure-tls` ?** Les certificats kubelet générés par `kubeadm` sont
 > auto-signés (SAN sur IP, pas de DNS). Sans ce flag, metrics-server ne peut pas vérifier le
@@ -31,10 +32,10 @@ ansible-playbook -i inventory.yml deploy_all.yml --tags metrics-server
 | Variable | Valeur par défaut |
 | -------- | ----------------- |
 | `metrics_server_namespace` | `kube-system` |
-| `metrics_server_manifest_url` | `…/metrics-server/releases/download/v0.7.2/components.yaml` |
+| `metrics_server_kustomize_src` | `infra/metrics-server` (manifeste vendorisé + patch) |
 | `metrics_server_rollout_timeout` | `120s` |
 
-Version installée : **v0.7.2**.
+Version installée : **v0.7.2** (épinglée dans `infra/metrics-server/components.yaml`).
 
 ## Vérification
 

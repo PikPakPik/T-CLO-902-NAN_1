@@ -35,7 +35,12 @@ flowchart LR
 ```
 
 - **Déploiement** : chart Helm `dex/dex`, namespace `dex`, stockage **mémoire** (config 100 %
-  statique : clients + comptes), une réplique.
+  statique : clients + comptes), une réplique épinglée sur **worker2** (`nodeSelector` sur le nom
+  AWS du node `ip-10-0-3-187.eu-west-3.compute.internal` — à mettre à jour si le node change). La
+  config applicative vit dans `infra/dex/values.yaml` ; Ansible se contente de **copier `infra/dex/`
+  sur le master** puis de lancer `helm ... -f infra/dex/values.yaml` et `kubectl apply -k`. Le même
+  répertoire pourra être consommé tel quel par **ArgoCD** (aucun templating Jinja, hostnames codés
+  en dur).
 - **Exposition** : HTTPRoute `dex.<nip>` sur le `public-gateway` Traefik existant.
   Émetteur : `http://dex.<nip>` (endpoints `/auth`, `/token`, `/userinfo`, `/keys`,
   `/.well-known/openid-configuration`).
@@ -49,9 +54,9 @@ flowchart LR
 
 | Élément | Rôle | Localisation |
 | ------- | ---- | ------------ |
-| Rôle Ansible `dex` | Déploie Dex (Helm) + HTTPRoute | `ansible/roles/dex/` |
+| Rôle Ansible `dex` | Copie `infra/dex/` sur le master puis déploie (Helm + kubectl) | `ansible/roles/dex/` |
 | Playbook `deploy_dex.yml` | Orchestration (tag `dex`) | `ansible/deploy_dex.yml` |
-| Values Helm | Config Dex (issuer, comptes, clients) | `ansible/roles/dex/templates/values.yaml.j2` |
+| Values Helm | Config Dex (issuer, comptes, clients) — **source unique, statique** | `infra/dex/values.yaml` |
 | HTTPRoute | Exposition `dex.<nip>` | `infra/dex/httproute.yaml` |
 | SealedSecret `dex-secrets` | Hash bcrypt + client secrets | `infra/dex/dex-sealedsecret.yaml` |
 | SealedSecret OAuth Grafana | Client secret côté Grafana | `infra/monitoring/grafana-oauth-sealedsecret.yaml` |
@@ -138,7 +143,7 @@ Dex est déployé **avant** monitoring pour être disponible au démarrage de Gr
 
 ## Comptes locaux
 
-Deux comptes locaux sont définis dans `ansible/roles/dex/defaults/main.yml` ; leur **mot de passe**
+Deux comptes locaux sont définis dans `infra/dex/values.yaml` (`config.staticPasswords`) ; leur **mot de passe**
 n'existe que sous forme de **hash bcrypt** dans le SealedSecret `dex-secrets` (clés
 `ADMIN_PASSWORD_HASH` / `USER_PASSWORD_HASH`, lues via `hashFromEnv`) :
 
@@ -150,7 +155,7 @@ n'existe que sous forme de **hash bcrypt** dans le SealedSecret `dex-secrets` (c
 ### Ajouter un compte local
 
 1. Ajouter une entrée dans `config.staticPasswords` de
-   `ansible/roles/dex/templates/values.yaml.j2` (email, `username`, `userID` unique, et
+   `infra/dex/values.yaml` (email, `username`, `userID` unique, et
    `hashFromEnv: BOB_PASSWORD_HASH` pointant vers une nouvelle clé d'env).
 2. Ajouter la clé `BOB_PASSWORD_HASH` (hash bcrypt) au SealedSecret `dex-secrets`. Le plus simple
    pour n'ajouter qu'une clé sans retoucher les autres est `kubeseal --merge-into` :
@@ -168,7 +173,7 @@ n'existe que sous forme de **hash bcrypt** dans le SealedSecret `dex-secrets` (c
 
 Les comptes locaux Dex (`enablePasswordDB`) **n'émettent pas** de claim `groups`. Le rôle Grafana
 est donc déterminé **par email**, via `role_attribute_path` dans
-`ansible/roles/monitoring/templates/values.yaml.j2` :
+`infra/monitoring/values.yaml` :
 
 ```ini
 role_attribute_path = email == 'admin@kubequest.local' && 'Admin' || 'Viewer'
@@ -176,6 +181,72 @@ role_attribute_path = email == 'admin@kubequest.local' && 'Admin' || 'Viewer'
 
 → l'email admin obtient **Admin**, tous les autres comptes **Viewer**. Le mapping par **groupe**
 arrivera avec le connecteur Entra ID.
+
+## Connecteur Microsoft Entra ID
+
+Le connecteur Entra ID est défini dans `config.connectors` de `infra/dex/values.yaml`. Il fédère
+les comptes du tenant Microsoft **en plus** des comptes locaux (les deux méthodes coexistent sur la
+page de login Dex).
+
+```yaml
+connectors:
+  - type: oidc
+    id: microsoft
+    name: Microsoft
+    config:
+      issuer: "https://login.microsoftonline.com/<tenant-id>/v2.0"
+      clientID: "<application-client-id>"
+      clientSecret: $MICROSOFT_CLIENT_SECRET
+      redirectURI: "https://dex.<nip>/callback"
+      scopes: [openid, profile, email]
+      insecureSkipEmailVerified: true
+      getUserInfo: false
+```
+
+### Pourquoi `type: oidc` et non `type: microsoft` ?
+
+Dex propose deux connecteurs pour Entra ID. On utilise volontairement le connecteur **générique `oidc`** plutôt que le connecteur natif **`microsoft`** :
+
+| | `type: microsoft` | `type: oidc` (**retenu**) |
+| --- | --- | --- |
+| Source des claims | Appelle **Microsoft Graph** (`/me`) pour récupérer profil + email | Lit uniquement l'**ID token** renvoyé par Entra |
+| Permissions demandées | `User.Read` (Graph délégué) + OpenID | Seulement OpenID (`openid profile email`) |
+| Consentement | **Admin requis** sur notre tenant | User-consentable (si le tenant l'autorise) |
+| Groupes Entra natifs | Oui (via `GroupMember.Read.All`) | Non (claim `groups` à configurer côté Entra) |
+
+**Raison déterminante** : notre tenant restreint le consentement utilisateur. Le connecteur
+`microsoft` demande la permission Graph `User.Read`, ce qui déclenche une **demande de consentement
+administrateur** (message *« Votre administrateur a reçu une notification de votre demande
+d'accès… »*) et **bloque la connexion** tant qu'un admin n'a pas approuvé — or nous n'avons pas
+d'accès admin garanti sur ce tenant. Le connecteur `oidc` ne demande que les permissions **OpenID de
+base**, sans aucun appel Graph, ce qui maximise les chances de passer **sans intervention admin**.
+
+> Si le tenant bloque **tout** consentement utilisateur (y compris OpenID de base), la connexion
+> retombera sur la demande admin malgré tout — mais c'est alors un consentement trivial à accorder
+> (permissions minimales), et aucune config Dex ne peut le contourner.
+
+### Détails de configuration
+
+- **`issuer` tenant-scopé** (`.../<tenant-id>/v2.0`) : restreint le login aux comptes de **ce
+  tenant** (équivalent du champ `tenant:` du connecteur `microsoft`).
+- **`insecureSkipEmailVerified: true`** : Entra v2.0 n'émet pas le claim `email_verified` ; sans ça
+  Dex rejetterait l'email.
+- **`getUserInfo: false`** : les claims viennent de l'ID token, pas du endpoint UserInfo.
+- **Claim `email` à activer côté Entra** : Entra v2.0 **n'émet pas `email` par défaut** dans l'ID
+  token. Côté App Registration → **Token configuration → Add optional claim → ID → `email`**. Sans
+  cet *optional claim*, Dex échoue au retour (`email claim not found`). Repli possible : mapper sur
+  `preferred_username` (l'UPN) si aucun email n'est disponible.
+- **Secret** : `$MICROSOFT_CLIENT_SECRET` est étendu depuis l'environnement (le connecteur `oidc`
+  n'a pas de champ `secretEnv:` comme les `staticClients`). La clé est ajoutée au SealedSecret
+  `dex-secrets` (cf. [Ajouter un compte local](#ajouter-un-compte-local) pour le `kubeseal
+  --merge-into`, avec `--from-literal=MICROSOFT_CLIENT_SECRET=…`).
+
+### Revenir au connecteur `microsoft`
+
+Pertinent uniquement si l'on veut récupérer les **groupes Entra nativement** (pour mapper les rôles
+Grafana par groupe AD) **et** qu'on dispose d'un accès admin pour accorder le consentement
+(`User.Read` + `GroupMember.Read.All`). Dans ce cas, remplacer le bloc par `type: microsoft` avec
+`tenant:`, `clientID`, `clientSecret`, `redirectURI`, et `groups`/`useGroupsAsWhitelist` au besoin.
 
 ## Vérification
 

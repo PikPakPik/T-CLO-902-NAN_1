@@ -1,4 +1,6 @@
 ---
+sealed_secrets_kustomize_src: "{{ playbook_dir }}/../infra/sealed-secrets"
+
 sealed_secrets_controller_namespace: kube-system
 sealed_secrets_controller_version: "0.32.2"
 sealed_secrets_chart_version: "2.17.7"

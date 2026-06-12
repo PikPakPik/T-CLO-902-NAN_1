@@ -1,24 +1,4 @@
 ---
-- name: "Vérifier les prérequis locaux (dex)"
-  hosts: localhost
-  become: false
-  gather_facts: false
-  vars:
-    ansible_become: false
-    dex_sealed_secret_file: "{{ playbook_dir }}/../infra/dex/dex-sealedsecret.yaml"
-  tasks:
-    - name: "[DEX] Vérifier que le SealedSecret Dex existe"
-      ansible.builtin.stat:
-        path: "{{ dex_sealed_secret_file }}"
-      register: dex_sealed_secret_stat
-
-    - name: "[DEX] Erreur si dex-sealedsecret.yaml est absent"
-      ansible.builtin.fail:
-        msg: >-
-          infra/dex/dex-sealedsecret.yaml est introuvable.
-          Générez-le en suivant la procédure de scellement (voir docs/dex.md).
-      when: not dex_sealed_secret_stat.stat.exists
-
 - name: "Déployer Dex IDP (comptes locaux)"
   hosts: k8s_master
   gather_facts: yes

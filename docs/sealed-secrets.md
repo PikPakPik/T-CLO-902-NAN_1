@@ -63,8 +63,10 @@ ansible-playbook -i inventory.yml deploy_all.yml --tags sealed-secrets
 
 1. Ajoute le repo Helm `sealed-secrets` (`https://bitnami-labs.github.io/sealed-secrets`).
 2. Met à jour le cache des repos Helm.
-3. Installe / met à jour le chart `sealed-secrets` dans `kube-system` (`fullnameOverride: sealed-secrets-controller`).
+3. Copie `infra/sealed-secrets/` sur le master, puis installe / met à jour le chart `sealed-secrets` dans `kube-system` avec `helm ... -f infra/sealed-secrets/values.yaml`.
 4. Vérifie que le Deployment est disponible.
+
+> La **config Helm** du contrôleur (`fullnameOverride: sealed-secrets-controller`) vit dans `infra/sealed-secrets/values.yaml` — **source unique, statique**, partagée avec ArgoCD (même modèle que Dex et monitoring). Le rôle Ansible ne fait que copier ce répertoire puis lancer Helm.
 
 ### Paramètres (`roles/sealed_secrets/defaults/main.yml`)
 

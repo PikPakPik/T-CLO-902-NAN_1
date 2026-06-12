@@ -7,29 +7,7 @@ monitoring_chart_repo_name: prometheus-community
 monitoring_chart_repo_url: https://prometheus-community.github.io/helm-charts
 monitoring_chart_version: "85.0.3"
 
-# Identifiants admin Grafana : fournis via un SealedSecret (aucun mot de passe en clair ici).
-# Le contrôleur Sealed Secrets déchiffre infra/monitoring/grafana-sealedsecret.yaml en un Secret
-# référencé par Grafana (grafana.admin.existingSecret).
-# Génération : sceller avec kubeseal (voir docs/sealed-secrets.md).
-grafana_admin_secret_name: grafana-admin-credentials
-
-# StorageClass utilisée par le PVC Prometheus. Doit exister avant l'install.
 monitoring_storage_class: local-path
-monitoring_prometheus_pvc_size: 20Gi
-monitoring_prometheus_retention: 15d
 
-# Hostnames nip.io (HTTPRoute dédié par service, path /)
-monitoring_nip_suffix: "{{ master_public_ip | replace('.', '-') }}.nip.io"
-monitoring_grafana_hostname: "grafana.{{ monitoring_nip_suffix }}"
-
-# SSO Grafana via Dex (OAuth générique). Le client secret est fourni par un SealedSecret
-# (clé GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET) — procédure de scellement : docs/dex.md.
-grafana_oauth_secret_name: grafana-oauth-credentials
-dex_hostname: "dex.{{ monitoring_nip_suffix }}"
-# Email du compte admin local Dex mappé sur le rôle Admin de Grafana (doit correspondre à
-# dex_admin_email dans roles/dex/defaults/main.yml). Les autres comptes obtiennent Viewer.
-grafana_oauth_admin_email: admin@kubequest.local
-
-# local-path-provisioner (Rancher) — installé si la StorageClass n'existe pas.
-local_path_provisioner_manifest_url: "https://raw.githubusercontent.com/rancher/local-path-provisioner/v0.0.36/deploy/local-path-storage.yaml"
+local_path_storage_kustomize_src: "{{ playbook_dir }}/../infra/local-path-storage"
 local_path_provisioner_rollout_timeout: 300s

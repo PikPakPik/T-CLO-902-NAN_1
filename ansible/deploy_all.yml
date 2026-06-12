@@ -1,14 +1,4 @@
 ---
-# Déploiement complet :
-#   connectivité → cluster → sealed-secrets → Traefik → Dex → monitoring → Headlamp → sample-app
-#
-#   ansible-playbook deploy_all.yml
-#
-# Prérequis pour sample-app (une seule fois) : GITHUB_USER + GITHUB_TOKEN pour créer ghcr-registry.
-# Prérequis pour dex/monitoring : SealedSecrets générés (procédure de scellement : docs/dex.md).
-#
-# Tags : connectivity | cluster | metrics-server | sealed-secrets | gateway | cert-manager | dex | app | monitoring | headlamp
-
 - name: Vérifier la connectivité SSH
   ansible.builtin.import_playbook: test_connectivity.yml
   tags: [connectivity]

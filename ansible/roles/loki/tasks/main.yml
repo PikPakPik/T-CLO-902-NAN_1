@@ -1,15 +1,16 @@
 ---
-- name: "[LOKI] Créer le répertoire des values Helm sur le master"
+- name: "[LOKI] Créer le répertoire des manifests Loki sur le master"
   ansible.builtin.file:
-    path: /tmp/kubequest/loki
+    path: /tmp/kubequest/infra/loki
     state: directory
     mode: "0755"
 
-- name: "[LOKI] Générer les values Helm Loki sur le master"
-  ansible.builtin.template:
-    src: loki-values.yaml.j2
-    dest: /tmp/kubequest/loki/loki-values.yaml
+- name: "[LOKI] Copier les values Helm Loki sur le master (depuis la machine de contrôle)"
+  ansible.builtin.copy:
+    src: "{{ loki_kustomize_src }}/"
+    dest: /tmp/kubequest/infra/loki/
     mode: "0644"
+    directory_mode: "0755"
 
 - name: "[LOKI] Ajouter le repo Helm {{ loki_chart_repo_name }}"
   ansible.builtin.command:
@@ -40,7 +41,7 @@
     create_namespace: true
     update_repo_cache: false
     values_files:
-      - /tmp/kubequest/loki/loki-values.yaml
+      - /tmp/kubequest/infra/loki/values.yaml
     wait: true
     timeout: 5m
 
@@ -54,8 +55,8 @@
     release_namespace: "{{ loki_namespace }}"
     create_namespace: true
     update_repo_cache: false
-    set_values:
-      - value: "config.clients[0].url=http://loki.{{ loki_namespace }}.svc.cluster.local:3100/loki/api/v1/push"
+    values_files:
+      - /tmp/kubequest/infra/loki/promtail-values.yaml
     wait: true
     timeout: 5m
 

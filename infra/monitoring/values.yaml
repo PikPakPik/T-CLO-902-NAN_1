@@ -1,0 +1,117 @@
+---
+# ----- Grafana (exposé via HTTPRoute grafana.15-237-15-14.nip.io) -----
+grafana:
+  enabled: true
+  admin:
+    existingSecret: "grafana-admin-credentials"
+    userKey: admin-user
+    passwordKey: admin-password
+  initChownData:
+    enabled: false
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 472
+    runAsGroup: 472
+    fsGroup: 472
+
+  envFromSecret: "grafana-oauth-credentials"
+  grafana.ini:
+    server:
+      root_url: "https://grafana.15-237-15-14.nip.io/"
+      domain: "grafana.15-237-15-14.nip.io"
+      serve_from_sub_path: false
+    auth.generic_oauth:
+      enabled: true
+      name: Dex
+      client_id: "grafana"
+      client_secret: "$__env{GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET}"
+      scopes: "openid profile email groups"
+      auth_url: "https://dex.15-237-15-14.nip.io/auth"
+      token_url: "https://dex.15-237-15-14.nip.io/token"
+      api_url: "https://dex.15-237-15-14.nip.io/userinfo"
+      login_attribute_path: email
+      email_attribute_path: email
+      role_attribute_path: "email == 'admin@kubequest.local' && 'Admin' || 'Viewer'"
+      # Pour permettre à un utilisateur d'appartenir à plusieurs rôles, on peut faire du "role_attribute_path" une expression plus complexe qui vérifie à la fois l'email et les groupes de l'utilisateur (extraits du token OIDC) :
+      # role_attribute_path: >-
+      #   email == 'admin@kubequest.local' && 'Admin'
+      #   || contains(groups[*], '11111111-aaaa-bbbb-cccc-222222222222') && 'Admin'
+      #   || 'Viewer'
+      allow_sign_up: true
+      use_pkce: true
+
+  additionalDataSources:
+    - name: Loki
+      type: loki
+      uid: loki
+      access: proxy
+      url: "http://loki.monitoring.svc.cluster.local:3100"
+      isDefault: false
+      jsonData:
+        maxLines: 1000
+  service:
+    type: ClusterIP
+  nodeSelector:
+    kubernetes.io/hostname: ip-10-0-3-198.eu-west-3.compute.internal
+  persistence:
+    enabled: true
+    type: pvc
+    storageClassName: local-path
+    accessModes: ["ReadWriteOnce"]
+    size: 5Gi
+
+# ----- Prometheus (interne uniquement — JAMAIS exposé publiquement, pas d'HTTPRoute) -----
+prometheus:
+  service:
+    type: ClusterIP
+  prometheusSpec:
+    retention: 15d
+    routePrefix: /
+    nodeSelector:
+      kubernetes.io/hostname: ip-10-0-3-198.eu-west-3.compute.internal
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: local-path
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 20Gi
+
+# ----- Alertmanager -----
+alertmanager:
+  alertmanagerSpec:
+    nodeSelector:
+      kubernetes.io/hostname: ip-10-0-3-198.eu-west-3.compute.internal
+    storage:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: local-path
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 2Gi
+
+# ----- prometheus-operator -----
+prometheusOperator:
+  nodeSelector:
+    kubernetes.io/hostname: ip-10-0-3-198.eu-west-3.compute.internal
+  admissionWebhooks:
+    patch:
+      nodeSelector:
+        kubernetes.io/hostname: ip-10-0-3-198.eu-west-3.compute.internal
+
+# ----- kube-state-metrics -----
+kube-state-metrics:
+  nodeSelector:
+    kubernetes.io/hostname: ip-10-0-3-198.eu-west-3.compute.internal
+
+# ----- node-exporter : un pod par nœud (DaemonSet) -----
+prometheus-node-exporter:
+  tolerations:
+    - key: node-role.kubernetes.io/control-plane
+      operator: Exists
+      effect: NoSchedule
+    - key: node-role.kubernetes.io/master
+      operator: Exists
+      effect: NoSchedule

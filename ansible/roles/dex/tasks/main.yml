@@ -38,18 +38,6 @@
   retries: 12
   delay: 5
 
-- name: "[DEX] Créer le répertoire des values Helm sur le master"
-  ansible.builtin.file:
-    path: /tmp/kubequest/dex
-    state: directory
-    mode: "0755"
-
-- name: "[DEX] Générer les values Helm sur le master"
-  ansible.builtin.template:
-    src: values.yaml.j2
-    dest: /tmp/kubequest/dex/values.yaml
-    mode: "0644"
-
 - name: "[DEX] Ajouter le repo Helm {{ dex_chart_repo_name }}"
   ansible.builtin.command:
     argv:
@@ -78,7 +66,7 @@
     create_namespace: true
     update_repo_cache: false
     values_files:
-      - /tmp/kubequest/dex/values.yaml
+      - /tmp/kubequest/infra/dex/values.yaml
     wait: true
     timeout: 5m
 
