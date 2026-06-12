@@ -46,16 +46,17 @@ jobs:
           OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
           REPO=$(echo "${{ github.event.repository.name }}" | tr '[:upper:]' '[:lower:]')
           IMAGE_BASE="ghcr.io/${OWNER}/${REPO}/sample-app"
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-12)
           echo "owner=${OWNER}" >> $GITHUB_OUTPUT
           echo "image_base=${IMAGE_BASE}" >> $GITHUB_OUTPUT
+          echo "short_sha=${SHORT_SHA}" >> $GITHUB_OUTPUT
           EFFECTIVE_REF="${{ github.event.inputs.branch && format('refs/heads/{0}', github.event.inputs.branch) || github.ref }}"
           if [ "${EFFECTIVE_REF}" = "refs/heads/main" ]; then
-            echo "tag=${IMAGE_BASE}:latest" >> $GITHUB_OUTPUT
+            echo "tag=${IMAGE_BASE}:${SHORT_SHA}" >> $GITHUB_OUTPUT
             echo "rollback_tag=${IMAGE_BASE}:rollback-demo" >> $GITHUB_OUTPUT
           else
-            COMMIT=$(echo "${{ github.sha }}" | cut -c1-12)
-            echo "tag=${IMAGE_BASE}:${COMMIT}" >> $GITHUB_OUTPUT
-            echo "rollback_tag=${IMAGE_BASE}:${COMMIT}-rollback-demo" >> $GITHUB_OUTPUT
+            echo "tag=${IMAGE_BASE}:${SHORT_SHA}" >> $GITHUB_OUTPUT
+            echo "rollback_tag=${IMAGE_BASE}:${SHORT_SHA}-rollback-demo" >> $GITHUB_OUTPUT
           fi
 
       - name: Build and push Docker image
@@ -82,7 +83,7 @@ jobs:
     name: Update GitOps values
     runs-on: self-hosted
     needs: build
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && (github.event.inputs.branch == 'main' || github.event.inputs.branch == ''))
     permissions:
       contents: write
 
@@ -100,8 +101,8 @@ jobs:
             echo "# Mis à jour automatiquement par la CI après chaque build Docker sur main."
             echo ""
             echo "image:"
-            echo "  tag: latest"
-            echo "  pullPolicy: Always"
+            echo "  tag: \"${SHORT_SHA}\""
+            echo "  pullPolicy: IfNotPresent"
             echo ""
             echo "podAnnotations:"
             echo "  kubequest.io/git-sha: \"${SHORT_SHA}\""
