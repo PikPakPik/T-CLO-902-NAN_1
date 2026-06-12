@@ -2,8 +2,8 @@
 # Mis à jour automatiquement par la CI après chaque build Docker sur main.
 
 image:
-  tag: latest
-  pullPolicy: Always
+  tag: "dceaaafd8cb2"
+  pullPolicy: IfNotPresent
 
 podAnnotations:
-  kubequest.io/git-sha: "328385535e23"
+  kubequest.io/git-sha: "dceaaafd8cb2"
