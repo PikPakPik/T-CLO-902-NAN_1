@@ -139,7 +139,7 @@ manifest [`infra/monitoring/networkpolicy.yaml`](../infra/monitoring/networkpoli
 | Service cible | Ingress autorisé depuis |
 | ------------- | ----------------------- |
 | Prometheus `:9090` | Grafana (requêtes) + Prometheus (self-scrape) |
-| Alertmanager `:9093` | Prometheus (alertes + scrape) + peers Alertmanager (`:9094`) |
+| Alertmanager `:9093` | Prometheus (alertes + scrape) + Grafana (data source + health check) + peers Alertmanager (`:9094`) |
 | kube-state-metrics `:8080` | Prometheus |
 
 Tout le reste (ex. un pod `sample-app`) est **refusé**. Les policies sont ciblées (sélecteur de
