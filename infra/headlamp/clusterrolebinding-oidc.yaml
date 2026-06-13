@@ -1,0 +1,48 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: headlamp-oidc-admin
+  labels:
+    app.kubernetes.io/name: headlamp
+    app.kubernetes.io/part-of: kubequest
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: User
+    name: admin@kubequest.local
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: headlamp-oidc-viewer
+  labels:
+    app.kubernetes.io/name: headlamp
+    app.kubernetes.io/part-of: kubequest
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: headlamp-viewer
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: User
+    name: user@kubequest.local
+# ---
+# apiVersion: rbac.authorization.k8s.io/v1
+# kind: ClusterRoleBinding
+# metadata:
+#   name: headlamp-oidc-group-admin
+#   labels:
+#     app.kubernetes.io/name: headlamp
+#     app.kubernetes.io/part-of: kubequest
+# roleRef:
+#   apiGroup: rbac.authorization.k8s.io
+#   kind: ClusterRole
+#   name: cluster-admin # remplace par headlamp-viewer ou cluster-admin selon le besoin de la configuration
+# subjects:
+#   - apiGroup: rbac.authorization.k8s.io
+#     kind: Group
+#     name: "11111111-aaaa-bbbb-cccc-222222222222"   # UID ou Name du groupe récupéré depuis Dex

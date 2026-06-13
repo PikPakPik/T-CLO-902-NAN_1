@@ -4,3 +4,12 @@ clusterRoleBinding:
 
 nodeSelector:
   kubernetes.io/hostname: ip-10-0-3-213.eu-west-3.compute.internal
+
+config:
+  oidc:
+    secret:
+      create: false
+    externalSecret:
+      enabled: true
+      name: headlamp-oidc
+      hasScopes: true

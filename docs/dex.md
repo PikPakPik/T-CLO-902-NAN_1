@@ -3,23 +3,23 @@
 ## Objectif
 
 [Dex](https://dexidp.io/) est un fournisseur d'identité **OpenID Connect (OIDC)**. Il sert de
-point d'authentification central pour les services du cluster (Grafana, Headlamp), avec à terme :
+point d'authentification central pour les services du cluster (Grafana, Headlamp) :
 
 - des **comptes locaux** (base de mots de passe statique gérée par Dex) ;
-- une fédération **Microsoft Entra ID** (connecteur OIDC) — **à venir**.
+- une fédération **Microsoft Entra ID** (connecteur OIDC).
 
-> ⚠️ **État actuel (étape 1)** : **comptes locaux uniquement**. Le connecteur Microsoft Entra ID
-> et le SSO complet de Headlamp seront ajoutés **avec cert-manager / TLS** (voir
-> [« À faire en phase TLS »](#à-faire-en-phase-tls-entra-id--headlamp)).
+> **État actuel** : TLS en place (cert-manager / Let's Encrypt). Dex fédère les **comptes locaux**
+> + le connecteur **Microsoft Entra ID**, et le **SSO Headlamp** est actif (OIDC + confiance du
+> kube-apiserver envers Dex — voir [docs/headlamp.md](headlamp.md#authentification-oidc-via-dex-sso)).
 
-## Pourquoi Grafana maintenant, mais pas Headlamp ?
+## Grafana et Headlamp via Dex
 
-| Service | Intégration | Pourquoi |
-| ------- | ----------- | -------- |
-| **Grafana** | OAuth générique → Dex, **actif** | Grafana valide les jetons lui-même : fonctionne en HTTP. |
-| **Headlamp** | OIDC → **différé** | L'OIDC « réel » de Headlamp exige que le **kube-apiserver** fasse confiance à Dex (`--oidc-issuer-url`…), or l'apiserver **refuse un émetteur en HTTP**. Il faut donc TLS d'abord. |
+| Service | Intégration | Détail |
+| ------- | ----------- | ------ |
+| **Grafana** | OAuth générique → Dex, **actif** | Grafana valide les jetons lui-même. |
+| **Headlamp** | OIDC → **actif** | L'OIDC « réel » de Headlamp exige que le **kube-apiserver** fasse confiance à Dex (`--oidc-issuer-url`…). C'est en place depuis le passage en **HTTPS** (cert Let's Encrypt) — voir [docs/headlamp.md](headlamp.md#authentification-oidc-via-dex-sso). |
 
-Le client OAuth `headlamp` est **déjà déclaré** dans Dex, prêt à être activé une fois le TLS en place.
+Le client OAuth `headlamp` est déclaré dans Dex (`config.staticClients`, redirect `/oidc-callback`).
 
 ## Architecture
 
@@ -60,6 +60,7 @@ flowchart LR
 | HTTPRoute | Exposition `dex.<nip>` | `infra/dex/httproute.yaml` |
 | SealedSecret `dex-secrets` | Hash bcrypt + client secrets | `infra/dex/dex-sealedsecret.yaml` |
 | SealedSecret OAuth Grafana | Client secret côté Grafana | `infra/monitoring/grafana-oauth-sealedsecret.yaml` |
+| SealedSecret OIDC Headlamp | Config OIDC côté Headlamp (`OIDC_*`) | `infra/headlamp/headlamp-oidc-sealedsecret.yaml` |
 
 ## Mise en place
 
@@ -272,19 +273,17 @@ curl -s http://dex.<nip>/.well-known/openid-configuration | jq .issuer
 | Grafana : « login.OAuthLogin(missing saved state) » ou redirect KO | Vérifier que `redirectURIs` du client `grafana` correspond exactement à `http://grafana.<nip>/login/generic_oauth`. |
 | Grafana : timeout sur `token_url`/`api_url` | **Hairpin réseau** : le pod Grafana (worker1) n'atteint pas l'IP publique du master. Repli : pointer `token_url`/`api_url` sur le service interne `http://dex.dex.svc.cluster.local:5556/token|/userinfo` (laisser `auth_url` public). |
 
-## À faire en phase TLS (Entra ID + Headlamp)
+## Phase TLS (Entra ID + Headlamp) — réalisée
 
-Une fois cert-manager / TLS en place :
+Avec cert-manager / TLS en place :
 
-1. **Basculer Dex en HTTPS** : émetteur `https://dex.<domaine>`, certificat via cert-manager,
-   et mettre à jour les `redirectURIs` + les URLs OAuth de Grafana en `https`.
-2. **Connecteur Microsoft Entra ID** : ajouter un `connectors:` de type `microsoft` (ou `oidc`)
-   dans la config Dex (tenant, client ID/secret scellés), et basculer le mapping de rôle Grafana
-   sur les **groupes** Entra.
-3. **Headlamp OIDC** :
-   - configurer les flags du kube-apiserver (`--oidc-issuer-url=https://dex.<domaine>`,
-     `--oidc-client-id=headlamp`, `--oidc-username-claim`, `--oidc-groups-claim`) ;
-   - activer `config.oidc` dans le chart Headlamp (client `headlamp`, déjà déclaré dans Dex) ;
-   - définir le RBAC Kubernetes mappé sur les groupes/emails OIDC.
+1. **Dex en HTTPS** ✅ : émetteur `https://dex.<nip>`, certificat Let's Encrypt prod (Gateway
+   Traefik), `redirectURIs` et URLs OAuth Grafana en `https`.
+2. **Connecteur Microsoft Entra ID** ✅ : `connectors:` de type `oidc` dans la config Dex (cf.
+   [Connecteur Microsoft Entra ID](#connecteur-microsoft-entra-id)).
+3. **Headlamp OIDC** ✅ : flags `--oidc-*` posés sur le kube-apiserver, `config.oidc` activé dans le
+   chart Headlamp (client `headlamp`), et RBAC mappé sur l'email (`admin@kubequest.local` →
+   `cluster-admin`, `user@kubequest.local` → `headlamp-viewer`). Détails et procédure de scellement
+   dans [docs/headlamp.md](headlamp.md#authentification-oidc-via-dex-sso).
 
 Voir aussi : [Sealed Secrets](sealed-secrets.md), [Monitoring](monitoring.md), [Headlamp](headlamp.md).

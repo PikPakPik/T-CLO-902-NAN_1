@@ -5,3 +5,11 @@ headlamp_release_name: headlamp
 headlamp_namespace: headlamp
 headlamp_chart_ref: headlamp
 headlamp_chart_repo_url: https://kubernetes-sigs.github.io/headlamp/
+
+headlamp_oidc_secret_name: headlamp-oidc
+
+headlamp_apiserver_manifest: /etc/kubernetes/manifests/kube-apiserver.yaml
+headlamp_oidc_issuer_url: "https://{{ dex_hostname }}"
+headlamp_oidc_client_id: headlamp
+headlamp_oidc_username_claim: email
+headlamp_oidc_groups_claim: groups

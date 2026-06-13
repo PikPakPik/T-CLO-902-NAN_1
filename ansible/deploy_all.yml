@@ -1,7 +1,7 @@
 ---
 - name: Vérifier la connectivité SSH
   ansible.builtin.import_playbook: test_connectivity.yml
-  tags: [connectivity]
+  tags: [always, connectivity]
 
 - name: Installer le cluster Kubernetes
   ansible.builtin.import_playbook: setup_cluster_playbook.yml
@@ -9,43 +9,43 @@
 
 - name: Installer metrics-server
   ansible.builtin.import_playbook: deploy_metrics_server.yml
-  tags: [metrics-server, cluster]
+  tags: [cluster, metrics-server]
 
 - name: Déployer Sealed Secrets
   ansible.builtin.import_playbook: deploy_sealed_secrets.yml
-  tags: [sealed-secrets]
+  tags: [cluster, sealed-secrets]
 
 - name: Installer le Gateway (Traefik)
   ansible.builtin.import_playbook: install_traefik.yml
-  tags: [gateway, gateway-install]
+  tags: [http, gateway, gateway-install]
 
 - name: Exposer les applications via le Gateway (Traefik)
   ansible.builtin.import_playbook: deploy_traefik.yml
-  tags: [gateway, gateway-deploy]
+  tags: [http, gateway, gateway-deploy]
 
 - name: Installer cert-manager
   ansible.builtin.import_playbook: install_cert_manager.yml
-  tags: [cert-manager, cert-manager-install]
+  tags: [http, cert-manager, cert-manager-install]
 
 - name: Déployer ClusterIssuers et Certificates
   ansible.builtin.import_playbook: deploy_cert_manager.yml
-  tags: [cert-manager, cert-manager-deploy]
+  tags: [http, cert-manager, cert-manager-deploy]
 
 - name: Déployer Dex IDP (comptes locaux)
   ansible.builtin.import_playbook: deploy_dex.yml
-  tags: [dex]
+  tags: [monitor, dex]
 
 - name: Déployer la stack monitoring
   ansible.builtin.import_playbook: deploy_monitoring.yml
-  tags: [monitoring]
+  tags: [monitor, monitoring]
 
 - name: Déployer la stack de logging (Loki + Promtail)
   ansible.builtin.import_playbook: deploy_loki.yml
-  tags: [logging]
+  tags: [monitor, logging]
   
 - name: Déployer Headlamp
   ansible.builtin.import_playbook: deploy_headlamp.yml
-  tags: [headlamp]
+  tags: [monitor, headlamp]
 
 - name: Déployer sample-app (Helm)
   ansible.builtin.import_playbook: deploy_app.yml

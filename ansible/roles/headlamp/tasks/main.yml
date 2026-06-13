@@ -1,4 +1,7 @@
 ---
+- name: "[HEADLAMP] Configurer les flags OIDC du kube-apiserver (confiance envers Dex)"
+  ansible.builtin.import_tasks: apiserver-oidc.yml
+
 - name: "[HEADLAMP] Ajouter le repo Helm headlamp"
   ansible.builtin.command:
     argv:
@@ -29,6 +32,30 @@
     dest: /tmp/kubequest/infra/headlamp/
     mode: "0644"
     directory_mode: "0755"
+
+- name: "[HEADLAMP] Créer le namespace {{ headlamp_namespace }} (avant le SealedSecret)"
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k8s_master_config }}"
+    src: /tmp/kubequest/infra/headlamp/namespace.yaml
+    state: present
+
+- name: "[HEADLAMP] Appliquer le SealedSecret OIDC Headlamp/Dex (avant Helm)"
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k8s_master_config }}"
+    src: /tmp/kubequest/infra/headlamp/headlamp-oidc-sealedsecret.yaml
+    state: present
+
+- name: "[HEADLAMP] Attendre que le Secret {{ headlamp_oidc_secret_name }} soit déchiffré"
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ k8s_master_config }}"
+    api_version: v1
+    kind: Secret
+    name: "{{ headlamp_oidc_secret_name }}"
+    namespace: "{{ headlamp_namespace }}"
+  register: headlamp_oidc_secret_info
+  until: headlamp_oidc_secret_info.resources | default([]) | length > 0
+  retries: 12
+  delay: 5
 
 - name: "[HEADLAMP] Installer / mettre à jour Headlamp via Helm"
   kubernetes.core.helm:

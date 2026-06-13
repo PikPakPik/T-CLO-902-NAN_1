@@ -1,0 +1,56 @@
+---
+- name: "[HEADLAMP][apiserver] Vérifier la présence du manifeste kube-apiserver (control-plane)"
+  ansible.builtin.stat:
+    path: "{{ headlamp_apiserver_manifest }}"
+  register: headlamp_apiserver_stat
+
+- name: "[HEADLAMP][apiserver] Échouer si le manifeste kube-apiserver est introuvable"
+  ansible.builtin.fail:
+    msg: >-
+      {{ headlamp_apiserver_manifest }} introuvable. Cette tâche doit s'exécuter sur le nœud
+      control-plane (deploy_headlamp.yml cible bien k8s_master).
+  when: not headlamp_apiserver_stat.stat.exists
+
+- name: "[HEADLAMP][apiserver] Sauvegarder le manifeste d'origine (une seule fois)"
+  ansible.builtin.copy:
+    src: "{{ headlamp_apiserver_manifest }}"
+    dest: /etc/kubernetes/kube-apiserver.yaml.pre-oidc.bak
+    remote_src: true
+    force: false
+    mode: "0600"
+
+- name: "[HEADLAMP][apiserver] Poser/mettre à jour les flags OIDC dans la commande kube-apiserver"
+  ansible.builtin.lineinfile:
+    path: "{{ headlamp_apiserver_manifest }}"
+    regexp: "{{ item.regexp }}"
+    line: "{{ item.line }}"
+    insertafter: '^\s*- kube-apiserver$'
+    state: present
+  loop:
+    - regexp: '^\s*- --oidc-issuer-url='
+      line: "    - --oidc-issuer-url={{ headlamp_oidc_issuer_url }}"
+    - regexp: '^\s*- --oidc-client-id='
+      line: "    - --oidc-client-id={{ headlamp_oidc_client_id }}"
+    - regexp: '^\s*- --oidc-username-claim='
+      line: "    - --oidc-username-claim={{ headlamp_oidc_username_claim }}"
+    - regexp: '^\s*- --oidc-groups-claim='
+      line: "    - --oidc-groups-claim={{ headlamp_oidc_groups_claim }}"
+  register: headlamp_apiserver_patch
+
+- name: "[HEADLAMP][apiserver] Laisser le kubelet recréer le pod kube-apiserver"
+  ansible.builtin.pause:
+    seconds: 15
+  when: headlamp_apiserver_patch is changed
+
+- name: "[HEADLAMP][apiserver] Attendre que l'API server réponde de nouveau (/healthz)"
+  ansible.builtin.shell: |
+    set -euo pipefail
+    KUBECONFIG={{ k8s_master_config }} kubectl get --raw='/healthz'
+  args:
+    executable: /bin/bash
+  register: headlamp_apiserver_health
+  until: headlamp_apiserver_health.rc == 0 and (headlamp_apiserver_health.stdout | trim) == 'ok'
+  retries: 30
+  delay: 5
+  changed_when: false
+  when: headlamp_apiserver_patch is changed

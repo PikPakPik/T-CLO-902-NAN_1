@@ -96,11 +96,89 @@ Exceptions pour l’usage courant dans l’UI :
 
 > Les secrets restent en **lecture seule** (pas de `create`/`update`/`delete`). Après modification du `ClusterRole`, régénère le token Headlamp (voir ci-dessous) pour que les nouvelles permissions s’appliquent.
 
-## Authentification
+## Authentification OIDC via Dex (SSO)
 
-Headlamp s’authentifie avec un **token Kubernetes** du ServiceAccount `headlamp-admin`. Le playbook **ne génère ni n’enregistre** de token : ainsi rien ne transite dans les sorties Ansible, les logs ou un fichier prévisible sur le master.
+Headlamp utilise **Dex** comme fournisseur d’identité OIDC, comme Grafana. La grosse différence :
+Grafana valide les jetons lui-même, alors que **Headlamp transmet l’`id_token` Dex au
+kube-apiserver**. L’apiserver doit donc faire **confiance à Dex** (flags `--oidc-*`), sinon le login
+réussit mais l’API renvoie `401`.
 
-Sur le **master**, après déploiement, crée un token **quand tu en as besoin** (durée limitée, ex. 48h) :
+```mermaid
+flowchart LR
+    user[Utilisateur] -->|1. Sign in| hl[Headlamp]
+    hl -->|2. redirige| dex[Dex IDP\nns dex]
+    user -->|3. identifiants| dex
+    dex -->|4. id_token OIDC| hl
+    hl -->|5. id_token en Bearer| api[kube-apiserver\n--oidc-issuer-url=Dex]
+    api -->|6. RBAC par email/groupe| hl
+```
+
+Trois volets, tous gérés par le rôle Ansible `headlamp` :
+
+1. **Chart Headlamp** (`infra/headlamp/values.yaml`) — `config.oidc.externalSecret` pointe sur le
+   Secret scellé `headlamp-oidc` (clés `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_ISSUER_URL`,
+   `OIDC_SCOPES`). Le client OAuth `headlamp` est déjà déclaré dans Dex (redirect `/oidc-callback`).
+2. **kube-apiserver** — la tâche `roles/headlamp/tasks/apiserver-oidc.yml` ajoute de façon
+   idempotente `--oidc-issuer-url=https://dex.<nip>`, `--oidc-client-id=headlamp`,
+   `--oidc-username-claim=email`, `--oidc-groups-claim=groups` au manifeste statique
+   `/etc/kubernetes/manifests/kube-apiserver.yaml` (sauvegarde `pre-oidc.bak` hors du dossier
+   surveillé par le kubelet). Le kubelet recrée alors le pod apiserver (~30 s d’indispo API).
+3. **RBAC** (`infra/headlamp/clusterrolebinding-oidc.yaml`) — mapping par **email** (claim
+   `--oidc-username-claim=email`) ou par **groupe** (claim `--oidc-groups-claim=groups`) :
+
+   | Sujet | Type | name | ClusterRole |
+   | ----- | ---- | ---- | ----------- |
+   | Admin local | `User` | `admin@kubequest.local` | `cluster-admin` |
+   | User local | `User` | `user@kubequest.local` | `headlamp-viewer` (lecture seule) |
+   | Groupe Entra | `Group` | `<group-object-id>` ou `<nom>` | `cluster-admin` (exemple) |
+
+   > Le claim `groups` (fédération Entra) contient par défaut des **Object IDs (GUID)** ; pour mapper
+   > par **nom**, configure le claim Groups d'Entra sur « Group names » (App Registration → Token
+   > configuration). Les **comptes locaux Dex n'émettent pas de `groups`** → ils restent mappés par
+   > email.
+
+> L’`--oidc-issuer-url` doit être **identique** au `config.issuer` de Dex (sans `/` final). Le
+> certificat Dex étant Let’s Encrypt **prod**, l’apiserver le valide via les CA racines système :
+> aucun `--oidc-ca-file` n’est nécessaire.
+
+### Générer le SealedSecret `headlamp-oidc` (sur le master, prérequis)
+
+On réutilise la valeur **déjà scellée** de `HEADLAMP_CLIENT_SECRET` (dans `dex-secrets`) pour
+qu’elle corresponde à ce que Dex connaît :
+
+```bash
+export KUBECONFIG=/etc/kubernetes/admin.conf
+HEADLAMP_CLIENT_SECRET=$(kubectl get secret dex-secrets -n dex \
+  -o jsonpath='{.data.HEADLAMP_CLIENT_SECRET}' | base64 -d)
+
+kubectl create namespace headlamp --dry-run=client -o yaml | kubectl apply -f -
+
+kubectl create secret generic headlamp-oidc -n headlamp \
+  --from-literal=OIDC_CLIENT_ID=headlamp \
+  --from-literal=OIDC_CLIENT_SECRET="$HEADLAMP_CLIENT_SECRET" \
+  --from-literal=OIDC_ISSUER_URL=https://dex.15-237-15-14.nip.io \
+  --from-literal=OIDC_SCOPES="openid profile email groups" \
+  --dry-run=client -o yaml \
+  | kubeseal --format=yaml --scope strict \
+      --controller-name sealed-secrets-controller --controller-namespace kube-system \
+  > infra/headlamp/headlamp-oidc-sealedsecret.yaml
+```
+
+Le fichier produit est chiffré (sûr à committer). Sans lui, `kubectl apply -k infra/headlamp/` et le
+rôle Ansible échouent (comme pour les SealedSecrets Dex/Grafana).
+
+### Se connecter
+
+1. Ouvrir `https://headlamp.15-237-15-14.nip.io/` → **Sign in** → redirection Dex.
+2. Saisir `admin@kubequest.local` (accès `cluster-admin`) ou `user@kubequest.local` (lecture seule).
+
+## Authentification par token (break-glass)
+
+Si Dex est indisponible, l’accès par **token Kubernetes** du ServiceAccount `headlamp-admin` reste
+disponible (équivalent du login admin natif de Grafana). Le playbook **ne génère ni n’enregistre** de
+token : rien ne transite dans les sorties Ansible, les logs ou un fichier prévisible sur le master.
+
+Sur le **master**, crée un token **quand tu en as besoin** (durée limitée, ex. 48h) :
 
 ```bash
 sudo KUBECONFIG=/etc/kubernetes/admin.conf kubectl create token headlamp-admin -n headlamp --duration=48h
