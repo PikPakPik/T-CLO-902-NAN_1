@@ -40,6 +40,10 @@ spec:
             - artisan
             - migrate
             - --force
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           env:
             - name: APP_ENV
               value: {{ .Values.app.env | default "production" | quote }}
