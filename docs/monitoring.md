@@ -136,6 +136,7 @@ Le chart déploie le jeu de règles **kube-prometheus-stack par défaut** (`Kube
 | `DemoPodCrashLooping` | rollback | un conteneur de `sample-app` redémarre en boucle |
 | `DemoAppHighCpu` | autoscaling | CPU pod > 80% du request (`100m`) |
 | `DemoAppHighMemory` | autoscaling | mémoire pod > 80% du request (`128Mi`) |
+| `DemoPodOOMKilled` | oom | un conteneur de `sample-app` tué par dépassement mémoire (`OOMKilled`, limite `512Mi`) |
 | `DemoNodeNotReady` | node | un noeud n'est plus `Ready` |
 
 > ⚠️ Toute `PrometheusRule` custom **doit** porter le label `release: kube-prometheus`
@@ -143,18 +144,27 @@ Le chart déploie le jeu de règles **kube-prometheus-stack par défaut** (`Kube
 
 ### Stresser la sample-app (alertes CPU / mémoire)
 
-Les alertes `DemoAppHighCpu` / `DemoAppHighMemory` sont scopées sur `container="sample-app"` : il faut donc charger **ce conteneur** (pas un pod tiers). Les deux commandes s'arrêtent seules au bout de 4 min (`timeout 240`) ; pour couper avant, `Ctrl-C` ou `kubectl -n sample-app rollout restart deploy/app-sample-app`.
+Les alertes `DemoAppHighCpu` / `DemoAppHighMemory` sont scopées sur `container="sample-app"` : il faut donc charger **ce conteneur** (pas un pod tiers). Les commandes CPU / mémoire s'arrêtent seules au bout de 4 min (`timeout 240`) ; pour couper avant, `Ctrl-C` ou `kubectl -n sample-app rollout restart deploy/app-sample-app`.
 
 ```bash
 # CPU : une boucle shell sature le quota CPU (throttlé à la limite 500m → ratio 5x le request)
 kubectl -n sample-app exec deploy/app-sample-app -c sample-app -- timeout 240 sh -c 'while :; do :; done'
 
-# Mémoire : alloue ~150 Mo (> 80% du request 128Mi, < limite 512Mi donc pas d'OOMKill)
+# Mémoire (HighMemory, sans kill) : alloue ~150 Mo (> 80% du request 128Mi, < limite 512Mi donc pas d'OOMKill)
 kubectl -n sample-app exec deploy/app-sample-app -c sample-app -- timeout 240 php -d memory_limit=-1 -r '$a = str_repeat("x", 150*1024*1024); sleep(600);'
 ```
 
-Compter **~1 à 3 min** (fenêtre `rate[2m]` + `for: 1m`) avant le passage en `firing`. Visualiser
+Pour déclencher **`DemoPodOOMKilled`**, il faut au contraire **dépasser la limite** (`512Mi`) : le kernel tue le conteneur (`OOMKilled`), que kubelet redémarre ensuite. Pas de `timeout` ici la commande est interrompue par le kill lui-même.
+
+```bash
+# OOMKill : alloue ~600 Mo (> limite 512Mi) → conteneur OOMKilled puis redémarré
+kubectl -n sample-app exec deploy/app-sample-app -c sample-app -- php -d memory_limit=-1 -r '$a = str_repeat("x", 600*1024*1024); sleep(600);'
+```
+
+Compter **~1 à 3 min** (fenêtre `rate[2m]` + `for: 1m`) avant le passage en `firing` pour CPU/mémoire ; l'`DemoPodOOMKilled` (`for: 0m`) fire quasi-immédiatement après le kill. Visualiser
 l'état dans Prometheus (`/alerts`) ou dans **Grafana → Alerting** (via la data source Alertmanager).
+
+L'OOMKill se voit aussi dans le **dashboard « Sample-app Démo »** : le panel dédié **« OOMKilled par pod »** passe à `1`, la table **« Alertes démo actives »** liste `DemoPodOOMKilled`, et le panel **« Redémarrages conteneur »** affiche le restart consécutif.
 
 > Pour déclencher l'alerte CPU **et** le HPA (démo autoscaling « bout en bout »), préférer une charge HTTP sur le service plutôt qu'un burn local p. ex. un pod jetable : `kubectl -n sample-app run loadgen --rm -it --restart=Never --image=williamyeh/hey -- -z 5m -c 50 http://app-sample-app.sample-app/`
 

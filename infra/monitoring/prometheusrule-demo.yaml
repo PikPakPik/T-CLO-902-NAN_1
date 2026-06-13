@@ -60,6 +60,22 @@ spec:
             summary: "Mémoire élevée sur {{ $labels.pod }} (> 80% du request)"
             description: "Le pod {{ $labels.pod }} consomme >80% de son request mémoire (128Mi)."
 
+    # --- Démo OOM : un conteneur tué par dépassement mémoire (OOMKilled) ---
+    - name: demo.oom
+      rules:
+        - alert: DemoPodOOMKilled
+          expr: |
+            max_over_time(
+              kube_pod_container_status_last_terminated_reason{reason="OOMKilled", job="kube-state-metrics", namespace="sample-app"}[5m]
+            ) >= 1
+          for: 0m
+          labels:
+            severity: critical
+            demo: oom
+          annotations:
+            summary: "Conteneur {{ $labels.container }} du pod {{ $labels.pod }} tué par OOM (ns sample-app)"
+            description: "Le conteneur {{ $labels.container }} du pod {{ $labels.pod }} a dépassé sa limite mémoire (512Mi) et a été OOMKilled. Vérifier resources.limits.memory et l'usage applicatif."
+
     # --- Démo node : un noeud NotReady doit alerter vite ---
     - name: demo.node
       rules:

@@ -14,7 +14,7 @@ data:
       "tags": ["kubequest", "sample-app", "demo"],
       "timezone": "browser",
       "schemaVersion": 39,
-      "version": 1,
+      "version": 2,
       "refresh": "10s",
       "time": { "from": "now-30m", "to": "now" },
       "templating": {
@@ -173,6 +173,28 @@ data:
           ],
           "transformations": [
             { "id": "organize", "options": { "excludeByName": { "Time": true, "Value": true, "__name__": true, "endpoint": true, "instance": true, "job": true, "service": true, "container": true, "prometheus": true }, "renameByName": { "alertname": "Alerte", "alertstate": "État", "severity": "Sévérité", "demo": "Démo", "pod": "Pod", "namespace": "Namespace", "node": "Noeud" } } }
+          ]
+        },
+        {
+          "id": 8,
+          "type": "timeseries",
+          "title": "OOMKilled par pod (dernière terminaison) indicateur OOM",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 32 },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "min": 0,
+              "max": 1,
+              "custom": { "drawStyle": "bars", "lineInterpolation": "stepAfter", "fillOpacity": 60, "showPoints": "never", "thresholdsStyle": { "mode": "off" } },
+              "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 1 } ] },
+              "color": { "mode": "thresholds" }
+            },
+            "overrides": []
+          },
+          "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["last", "max"] }, "tooltip": { "mode": "multi" } },
+          "targets": [
+            { "refId": "A", "datasource": { "type": "prometheus", "uid": "${datasource}" }, "expr": "sum by (pod) (max_over_time(kube_pod_container_status_last_terminated_reason{namespace='sample-app', reason='OOMKilled'}[5m]))", "legendFormat": "{{pod}}" }
           ]
         }
       ]
