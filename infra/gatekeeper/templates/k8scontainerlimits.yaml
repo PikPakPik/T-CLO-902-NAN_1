@@ -1,0 +1,49 @@
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: k8scontainerlimits
+  annotations:
+    description: Exige que chaque conteneur (et init-conteneur) définisse des limites de ressources (par défaut cpu + memory). Indispensable au bon fonctionnement de l'autoscaling (HPA) et à la protection des nœuds contre l'épuisement de ressources / les OOM.
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sContainerLimits
+      validation:
+        openAPIV3Schema:
+          type: object
+          properties:
+            limits:
+              description: Ressources dont la limite est obligatoire (ex. ["cpu", "memory"]).
+              type: array
+              items:
+                type: string
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package k8scontainerlimits
+
+        violation[{"msg": msg}] {
+          container := input_containers[_]
+          required := required_limits
+          provided := {k | container.resources.limits[k]}
+          missing := required - provided
+          count(missing) > 0
+          msg := sprintf("conteneur <%v> : limites de ressources manquantes : %v", [container.name, missing])
+        }
+
+        required_limits := r {
+          input.parameters.limits
+          r := {x | x := input.parameters.limits[_]}
+        }
+
+        required_limits := {"cpu", "memory"} {
+          not input.parameters.limits
+        }
+
+        input_containers[c] {
+          c := input.review.object.spec.containers[_]
+        }
+        input_containers[c] {
+          c := input.review.object.spec.initContainers[_]
+        }

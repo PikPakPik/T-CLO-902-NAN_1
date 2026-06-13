@@ -1,0 +1,16 @@
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: K8sRequiredLabels
+metadata:
+  name: workloads-must-have-app-label
+spec:
+  enforcementAction: deny
+  match:
+    kinds:
+      - apiGroups: ["apps"]
+        kinds: ["Deployment", "StatefulSet"]
+    namespaces:
+      - sample-app
+  parameters:
+    message: "Tout Deployment/StatefulSet doit porter le label 'app.kubernetes.io/name'."
+    labels:
+      - key: app.kubernetes.io/name

@@ -1,0 +1,64 @@
+---
+- name: "[GATEKEEPER] Ajouter le repo Helm {{ gatekeeper_chart_repo_name }}"
+  ansible.builtin.command:
+    argv:
+      - helm
+      - repo
+      - add
+      - "{{ gatekeeper_chart_repo_name }}"
+      - "{{ gatekeeper_chart_repo_url }}"
+  register: gatekeeper_helm_repo_add
+  failed_when: >-
+    gatekeeper_helm_repo_add.rc != 0
+    and ('already exists' not in (gatekeeper_helm_repo_add.stderr | default('')))
+  changed_when: "'already exists' not in (gatekeeper_helm_repo_add.stderr | default(''))"
+
+- name: "[GATEKEEPER] Mettre à jour le cache des repos Helm"
+  ansible.builtin.command: helm repo update
+  changed_when: false
+
+- name: "[GATEKEEPER] Créer le répertoire des manifests sur le master"
+  ansible.builtin.file:
+    path: "{{ gatekeeper_remote_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: "[GATEKEEPER] Copier les manifests sur le master (depuis la machine de contrôle)"
+  ansible.builtin.copy:
+    src: "{{ gatekeeper_kustomize_src }}/"
+    dest: "{{ gatekeeper_remote_dir }}/"
+    mode: "0644"
+    directory_mode: "0755"
+
+- name: "[GATEKEEPER] Installer / mettre à jour le contrôleur via Helm"
+  kubernetes.core.helm:
+    kubeconfig: "{{ k8s_master_config }}"
+    name: "{{ gatekeeper_release_name }}"
+    chart_ref: "{{ gatekeeper_chart_ref }}"
+    chart_repo_url: "{{ gatekeeper_chart_repo_url }}"
+    chart_version: "{{ gatekeeper_chart_version }}"
+    release_namespace: "{{ gatekeeper_namespace }}"
+    create_namespace: true
+    update_repo_cache: false
+    wait: true
+    timeout: 5m
+    values_files:
+      - "{{ gatekeeper_remote_dir }}/values.yaml"
+
+- name: "[GATEKEEPER] Attendre que le controller-manager (webhook) soit Ready"
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ k8s_master_config }}"
+    kubectl -n {{ gatekeeper_namespace }} rollout status deploy/gatekeeper-controller-manager --timeout={{ gatekeeper_rollout_timeout }}
+  args:
+    executable: /bin/bash
+  changed_when: false
+
+- name: "[GATEKEEPER] Attendre que l'audit soit Ready"
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ k8s_master_config }}"
+    kubectl -n {{ gatekeeper_namespace }} rollout status deploy/gatekeeper-audit --timeout={{ gatekeeper_rollout_timeout }}
+  args:
+    executable: /bin/bash
+  changed_when: false

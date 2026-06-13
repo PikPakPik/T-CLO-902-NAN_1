@@ -1,0 +1,80 @@
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: k8sdisallowedtags
+  annotations:
+    description: Interdit l'utilisation de certains tags d'image (par défaut "latest") ainsi que les images sans tag explicite. Force des déploiements reproductibles et traçables.
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sDisallowedTags
+      validation:
+        openAPIV3Schema:
+          type: object
+          properties:
+            tags:
+              description: Liste des tags interdits (ex. ["latest"]).
+              type: array
+              items:
+                type: string
+            exemptImages:
+              description: Préfixes d'images exemptés de la règle.
+              type: array
+              items:
+                type: string
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package k8sdisallowedtags
+
+        # Tag explicitement interdit (ex. :latest)
+        violation[{"msg": msg}] {
+          container := input_containers[_]
+          not is_exempt(container)
+          tag := image_tag(container.image)
+          tag == input.parameters.tags[_]
+          msg := sprintf("conteneur <%v> : le tag d'image <%v> est interdit (image: %v)", [container.name, tag, container.image])
+        }
+
+        # Image sans tag explicite (= latest implicite)
+        violation[{"msg": msg}] {
+          container := input_containers[_]
+          not is_exempt(container)
+          not has_tag(container.image)
+          not has_digest(container.image)
+          msg := sprintf("conteneur <%v> : l'image <%v> n'a pas de tag explicite", [container.name, container.image])
+        }
+
+        # Conteneurs applicatifs + init-conteneurs
+        input_containers[c] {
+          c := input.review.object.spec.containers[_]
+        }
+        input_containers[c] {
+          c := input.review.object.spec.initContainers[_]
+        }
+
+        # Dernier segment du chemin d'image (après le dernier "/"), pour ignorer un éventuel port de registry (ex. registry:5000/nginx).
+        last_segment(image) := seg {
+          parts := split(image, "/")
+          seg := parts[count(parts) - 1]
+        }
+
+        has_tag(image) {
+          contains(last_segment(image), ":")
+        }
+
+        has_digest(image) {
+          contains(image, "@sha256:")
+        }
+
+        image_tag(image) := tag {
+          parts := split(last_segment(image), ":")
+          count(parts) > 1
+          tag := parts[count(parts) - 1]
+        }
+
+        is_exempt(container) {
+          exempt := input.parameters.exemptImages[_]
+          startswith(container.image, exempt)
+        }

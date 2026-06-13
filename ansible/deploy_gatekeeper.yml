@@ -1,0 +1,8 @@
+---
+- name: Déployer les politiques Gatekeeper (ConstraintTemplates + Constraints)
+  hosts: k8s_master
+  gather_facts: no
+  become: yes
+  roles:
+    - role: gatekeeper
+      tags: [deploy]

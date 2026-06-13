@@ -1,0 +1,21 @@
+---
+# Source des manifests (values Helm + ConstraintTemplates + Constraints)
+gatekeeper_kustomize_src: "{{ playbook_dir }}/../infra/gatekeeper"
+gatekeeper_remote_dir: /tmp/kubequest/infra/gatekeeper
+
+# Chart Helm
+gatekeeper_namespace: gatekeeper-system
+gatekeeper_release_name: gatekeeper
+gatekeeper_chart_ref: gatekeeper
+gatekeeper_chart_repo_name: gatekeeper
+gatekeeper_chart_repo_url: https://open-policy-agent.github.io/gatekeeper/charts
+gatekeeper_chart_version: "3.22.2"
+
+gatekeeper_rollout_timeout: 180s
+
+# CRD générés par nos ConstraintTemplates : on attend leur établissement avant
+# d'appliquer les Constraints correspondantes (évite la race ConstraintTemplate -> Constraint).
+gatekeeper_constraint_crds:
+  - k8sdisallowedtags.constraints.gatekeeper.sh
+  - k8scontainerlimits.constraints.gatekeeper.sh
+  - k8srequiredlabels.constraints.gatekeeper.sh

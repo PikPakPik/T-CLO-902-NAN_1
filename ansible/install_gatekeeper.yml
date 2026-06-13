@@ -1,0 +1,8 @@
+---
+- name: Installer OPA Gatekeeper (validating admission webhook)
+  hosts: k8s_master
+  gather_facts: no
+  become: yes
+  roles:
+    - role: gatekeeper
+      tags: [install]

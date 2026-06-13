@@ -9,7 +9,14 @@ metadata:
 spec:
   containers:
     - name: wget
-      image: busybox
+      image: busybox:1.36
       command: ['wget']
       args: ['{{ include "sample-app.fullname" . }}:{{ .Values.service.port }}']
+      resources:
+        requests:
+          cpu: 10m
+          memory: 16Mi
+        limits:
+          cpu: 50m
+          memory: 32Mi
   restartPolicy: Never

@@ -34,6 +34,13 @@ spec:
           containers:
             - name: backup
               image: "mysql:8.0"
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 128Mi
+                limits:
+                  cpu: 500m
+                  memory: 512Mi
               env:
                 - name: MYSQL_HOST
                   value: {{ .Values.database.host | default (printf "%s-mysql" (include "sample-app.fullname" .)) | quote }}

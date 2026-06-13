@@ -28,6 +28,7 @@ Déploiement d'un cluster **Kubernetes auto-géré sur AWS EC2** (Amazon Linux 2
 | Migration Envoy → Traefik | [docs/traefik-migration.md](docs/traefik-migration.md) |
 | HTTPS / TLS (cert-manager, Let's Encrypt) | [docs/cert-manager.md](docs/cert-manager.md) |
 | Sealed Secrets | [docs/sealed-secrets.md](docs/sealed-secrets.md) |
+| OPA Gatekeeper (policy as code / admission webhook) | [docs/gatekeeper.md](docs/gatekeeper.md) |
 | Déploiement Helm (sample-app) | [docs/helm.md](docs/helm.md) |
 | metrics-server & autoscaling (HPA) | [docs/metrics-server.md](docs/metrics-server.md) |
 | Monitoring (Prometheus/Grafana) | [docs/monitoring.md](docs/monitoring.md) |
@@ -190,7 +191,7 @@ Tous les hôtes doivent répondre (master en direct, workers via le ProxyCommand
 ### Étape 3 — Déploiement complet (recommandé)
 
 Un seul playbook orchestre tout l'enchaînement :
-`connectivité → cluster → metrics-server → sealed-secrets → Traefik → cert-manager → Dex → monitoring → Loki → Headlamp → sample-app`.
+`connectivité → cluster → metrics-server → sealed-secrets → gatekeeper → Traefik → cert-manager → Dex → monitoring → Loki → Headlamp → sample-app`.
 
 ```bash
 ansible-playbook -i ansible/inventory.yml ansible/deploy_all.yml
@@ -212,25 +213,28 @@ ansible-playbook -i ansible/inventory.yml ansible/deploy_all.yml --tags metrics-
 # 4.3 Sealed Secrets (contrôleur de déchiffrement)
 ansible-playbook -i ansible/inventory.yml ansible/deploy_all.yml --tags sealed-secrets
 
-# 4.4 Traefik (CRDs Gateway API + Helm + Gateway public)
+# 4.4 OPA Gatekeeper (admission webhook + politiques de sécurité sample-app)
+ansible-playbook -i ansible/inventory.yml ansible/deploy_all.yml --tags gatekeeper
+
+# 4.5 Traefik (CRDs Gateway API + Helm + Gateway public)
 ansible-playbook -i ansible/inventory.yml ansible/deploy_all.yml --tags gateway
 
-# 4.5 cert-manager (Helm + ClusterIssuers Let's Encrypt + certificat wildcard TLS)
+# 4.6 cert-manager (Helm + ClusterIssuers Let's Encrypt + certificat wildcard TLS)
 ansible-playbook -i ansible/inventory.yml ansible/deploy_all.yml --tags cert-manager
 
-# 4.6 Dex IDP (SSO comptes locaux ; prérequis : SealedSecrets scellés voir docs/dex.md)
+# 4.7 Dex IDP (SSO comptes locaux ; prérequis : SealedSecrets scellés voir docs/dex.md)
 ansible-playbook -i ansible/inventory.yml ansible/deploy_all.yml --tags dex
 
-# 4.7 Stack monitoring (Prometheus / Grafana / Alertmanager + SSO Grafana via Dex)
+# 4.8 Stack monitoring (Prometheus / Grafana / Alertmanager + SSO Grafana via Dex)
 ansible-playbook -i ansible/inventory.yml ansible/deploy_all.yml --tags monitoring
 
-# 4.8 Stack logging (Loki + Promtail, intégrés à Grafana)
+# 4.9 Stack logging (Loki + Promtail, intégrés à Grafana)
 ansible-playbook -i ansible/inventory.yml ansible/deploy_all.yml --tags logging
 
-# 4.9 Headlamp (dashboard)
+# 4.10 Headlamp (dashboard)
 ansible-playbook -i ansible/inventory.yml ansible/deploy_all.yml --tags headlamp
 
-# 4.10 Application Laravel + MySQL
+# 4.11 Application Laravel + MySQL
 ansible-playbook -i ansible/inventory.yml ansible/deploy_all.yml --tags app
 ```
 
@@ -242,6 +246,7 @@ Chaque étape dispose aussi de son playbook dédié, équivalent :
 | `cluster` | `setup_cluster_playbook.yml` |
 | `metrics-server` | `deploy_metrics_server.yml` |
 | `sealed-secrets` | `deploy_sealed_secrets.yml` |
+| `gatekeeper` | `install_gatekeeper.yml` + `deploy_gatekeeper.yml` |
 | `gateway` | `install_traefik.yml` + `deploy_traefik.yml` |
 | `cert-manager` | `install_cert_manager.yml` + `deploy_cert_manager.yml` |
 | `dex` | `deploy_dex.yml` |

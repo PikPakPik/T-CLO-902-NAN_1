@@ -1,0 +1,59 @@
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: k8srequiredlabels
+  annotations:
+    description: Exige que les objets portent un ensemble de labels donné (avec, en option, un motif de valeur). Garantit une gouvernance cohérente (traçabilité, sélection, coûts).
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sRequiredLabels
+      validation:
+        openAPIV3Schema:
+          type: object
+          properties:
+            message:
+              type: string
+            labels:
+              type: array
+              items:
+                type: object
+                properties:
+                  key:
+                    type: string
+                  allowedRegex:
+                    type: string
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package k8srequiredlabels
+
+        get_message(parameters, _default) := _default {
+          not parameters.message
+        }
+
+        get_message(parameters, _default) := parameters.message {
+          parameters.message
+        }
+
+        # Label obligatoire absent
+        violation[{"msg": msg, "details": {"missing_labels": missing}}] {
+          provided := {label | input.review.object.metadata.labels[label]}
+          required := {label | label := input.parameters.labels[_].key}
+          missing := required - provided
+          count(missing) > 0
+          def_msg := sprintf("labels obligatoires manquants : %v", [missing])
+          msg := get_message(input.parameters, def_msg)
+        }
+
+        # Valeur de label non conforme au motif
+        violation[{"msg": msg}] {
+          value := input.review.object.metadata.labels[key]
+          expected := input.parameters.labels[_]
+          expected.key == key
+          expected.allowedRegex != ""
+          not regex.match(expected.allowedRegex, value)
+          def_msg := sprintf("le label <%v: %v> ne respecte pas le motif <%v>", [key, value, expected.allowedRegex])
+          msg := get_message(input.parameters, def_msg)
+        }

@@ -1,0 +1,18 @@
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: K8sDisallowedTags
+metadata:
+  name: disallow-latest-tag
+spec:
+  # deny = la création/màj du Pod est REFUSÉE par le webhook si la règle est violée. (dryrun = audit seul sans blocage ; warn = avertissement non bloquant)
+  enforcementAction: deny
+  match:
+    kinds:
+      - apiGroups: [""]
+        kinds: ["Pod"]
+    # Portée limitée à l'application de l'équipe : aucun composant d'infra n'est impacté.
+    namespaces:
+      - sample-app
+  parameters:
+    tags:
+      - latest
+    exemptImages: []

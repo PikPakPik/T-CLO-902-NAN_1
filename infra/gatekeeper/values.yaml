@@ -1,0 +1,8 @@
+replicas: 1
+
+validatingWebhookFailurePolicy: Ignore
+
+controllerManager:
+  exemptNamespaces:
+    - kube-system
+    - gatekeeper-system

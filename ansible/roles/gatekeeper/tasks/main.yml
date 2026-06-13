@@ -1,0 +1,6 @@
+---
+- import_tasks: install.yml
+  tags: [gatekeeper, install]
+
+- import_tasks: deploy.yml
+  tags: [gatekeeper, deploy]

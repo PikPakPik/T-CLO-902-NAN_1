@@ -15,6 +15,14 @@
   ansible.builtin.import_playbook: deploy_sealed_secrets.yml
   tags: [cluster, sealed-secrets]
 
+- name: Installer OPA Gatekeeper (validating admission webhook)
+  ansible.builtin.import_playbook: install_gatekeeper.yml
+  tags: [security, gatekeeper, gatekeeper-install]
+
+- name: Déployer les politiques Gatekeeper (ConstraintTemplates + Constraints)
+  ansible.builtin.import_playbook: deploy_gatekeeper.yml
+  tags: [security, gatekeeper, gatekeeper-deploy]
+
 - name: Installer le Gateway (Traefik)
   ansible.builtin.import_playbook: install_traefik.yml
   tags: [http, gateway, gateway-install]

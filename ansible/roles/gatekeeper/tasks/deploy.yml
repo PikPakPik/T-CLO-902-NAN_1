@@ -1,0 +1,57 @@
+---
+- name: "[GATEKEEPER] Créer le répertoire des manifests sur le master"
+  ansible.builtin.file:
+    path: "{{ gatekeeper_remote_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: "[GATEKEEPER] Copier les manifests (ConstraintTemplates + Constraints) sur le master"
+  ansible.builtin.copy:
+    src: "{{ gatekeeper_kustomize_src }}/"
+    dest: "{{ gatekeeper_remote_dir }}/"
+    mode: "0644"
+    directory_mode: "0755"
+
+- name: "[GATEKEEPER] Appliquer les ConstraintTemplates (règles Rego)"
+  ansible.builtin.shell: |
+    set -euo pipefail
+    KUBECONFIG="{{ k8s_master_config }}" kubectl apply -k {{ gatekeeper_remote_dir }}/templates/
+  args:
+    executable: /bin/bash
+
+- name: "[GATEKEEPER] Attendre l'établissement des CRD générés par les templates"
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ k8s_master_config }}"
+    kubectl wait --for condition=established --timeout=120s crd/{{ item }}
+  args:
+    executable: /bin/bash
+  loop: "{{ gatekeeper_constraint_crds }}"
+  changed_when: false
+
+- name: "[GATEKEEPER] Appliquer les Constraints (avec retry, le temps que Gatekeeper enregistre les nouveaux types)"
+  ansible.builtin.shell: |
+    set -euo pipefail
+    KUBECONFIG="{{ k8s_master_config }}" kubectl apply -k {{ gatekeeper_remote_dir }}/constraints/
+  args:
+    executable: /bin/bash
+  register: gatekeeper_apply_constraints
+  retries: 6
+  delay: 10
+  until: gatekeeper_apply_constraints.rc == 0
+
+- name: "[GATEKEEPER] Lister les Constraints déployées et leur état"
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG="{{ k8s_master_config }}"
+    kubectl get constrainttemplates
+    echo "---"
+    kubectl get k8sdisallowedtags,k8scontainerlimits,k8srequiredlabels -A
+  args:
+    executable: /bin/bash
+  register: gatekeeper_constraints_state
+  changed_when: false
+
+- name: "[GATEKEEPER] Afficher l'état des politiques"
+  ansible.builtin.debug:
+    msg: "{{ gatekeeper_constraints_state.stdout_lines }}"
