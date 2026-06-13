@@ -97,7 +97,7 @@ jobs:
         run: |
           SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-12)
           {
-            echo "# Values de déploiement — source de vérité GitOps (sans ArgoCD)."
+            echo "# Values de déploiement source de vérité GitOps (sans ArgoCD)."
             echo "# Mis à jour automatiquement par la CI après chaque build Docker sur main."
             echo ""
             echo "image:"

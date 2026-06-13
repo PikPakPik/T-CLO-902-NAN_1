@@ -3,31 +3,28 @@
 Ce document décrit l'installation **automatisée** du cluster Kubernetes via Ansible (`kubeadm`).
 Pour la procédure **manuelle** équivalente (commandes pas à pas), voir [`docs/initialize_vms.md`](initialize_vms.md).
 
-> L'architecture Ansible globale (inventaire, variables, catalogue des rôles/playbooks) est
-> décrite dans [`docs/ansible.md`](ansible.md).
+> L'architecture Ansible globale (inventaire, variables, catalogue des rôles/playbooks) est décrite dans [`docs/ansible.md`](ansible.md).
 
 ## Vue d'ensemble
 
-Le playbook `setup_cluster_playbook.yml` initialise un cluster `kubeadm` sur Amazon Linux 2023 :
-un **control-plane** (master) et trois **workers**, avec **containerd** comme runtime et **Calico**
-comme CNI.
+Le playbook `setup_cluster_playbook.yml` initialise un cluster `kubeadm` sur Amazon Linux 2023 : un **control-plane** (master) et trois **workers**, avec **containerd** comme runtime et **Calico** comme CNI.
 
 ```mermaid
 flowchart TD
     play[setup_cluster_playbook.yml]
 
-    subgraph common[Play 1 — hosts: k8s_cluster]
+    subgraph common[Play 1 hosts: k8s_cluster]
         c[role k8s_common\nswap, modules, sysctl,\ncontainerd, paquets k8s]
         c --> deps[role k8s_ansible_deps\nsur le master uniquement\npip + kubernetes.core + helm]
     end
 
-    subgraph master[Play 2 — hosts: k8s_master]
+    subgraph master[Play 2 hosts: k8s_master]
         m1[kubeadm init] --> m2[KUBECONFIG admin.conf]
         m2 --> m3[Déployer Calico]
         m3 --> m4[Générer la commande join]
     end
 
-    subgraph worker[Play 3 — hosts: k8s_workers]
+    subgraph worker[Play 3 hosts: k8s_workers]
         w1[Récupérer la commande join\ndepuis le master] --> w2[kubeadm join]
     end
 
@@ -40,23 +37,23 @@ Depuis le dossier `ansible/` :
 
 ```bash
 # Cluster seul
-ansible-playbook -i inventory.yml setup_cluster_playbook.yml
+ansible-playbook -i ansible/inventory.yml ansible/setup_cluster_playbook.yml
 
 # Ou via l'orchestrateur complet
-ansible-playbook -i inventory.yml deploy_all.yml --tags cluster
+ansible-playbook -i ansible/inventory.yml ansible/deploy_all.yml --tags cluster
 ```
 
-Tags disponibles : `common` (préparation des nœuds), `master`, `worker`, `cluster`.
+Tags disponibles : `common` (préparation des noeuds), `master`, `worker`, `cluster`.
 
-> Toutes les tâches sont **idempotentes** : un nœud déjà initialisé/joint est détecté
+> Toutes les tâches sont **idempotentes** : un noeud déjà initialisé/joint est détecté
 > (`/etc/kubernetes/admin.conf` côté master, `/etc/kubernetes/kubelet.conf` côté worker)
 > et l'étape correspondante est sautée.
 
 ## Détail des rôles
 
-### `k8s_common` (tous les nœuds)
+### `k8s_common` (tous les noeuds)
 
-Prépare chaque nœud pour `kubeadm` :
+Prépare chaque noeud pour `kubeadm` :
 
 | Étape | Détail |
 | ----- | ------ |
@@ -71,8 +68,7 @@ Prépare chaque nœud pour `kubeadm` :
 
 ### `k8s_ansible_deps` (master uniquement)
 
-Installe les prérequis des modules Ansible `kubernetes.core` (utilisés par les playbooks
-monitoring, headlamp, metrics-server, sealed-secrets) :
+Installe les prérequis des modules Ansible `kubernetes.core` (utilisés par les playbooks monitoring, headlamp, metrics-server, sealed-secrets) :
 
 - `python3-pip`
 - bibliothèques Python : `kubernetes>=28.0.0`, `PyYAML`, `jsonpatch`
@@ -80,30 +76,26 @@ monitoring, headlamp, metrics-server, sealed-secrets) :
 
 ### `k8s_master` (control-plane)
 
-1. **`kubeadm init`** — sans flag particulier (valeurs par défaut : pod CIDR `10.244.0.0/16`).
+1. **`kubeadm init`** sans flag particulier (valeurs par défaut : pod CIDR `10.244.0.0/16`).
    Sauté si `/etc/kubernetes/admin.conf` existe déjà.
 2. Exporte `KUBECONFIG=/etc/kubernetes/admin.conf` dans `/root/.bashrc`.
-3. **Calico** — attend l'API server (`127.0.0.1:6443`), puis applique le manifeste
-   `calico.yaml` version `{{ calico_version }}` (`v3.31.4`) s'il n'est pas déjà présent.
+3. **Calico** attend l'API server (`127.0.0.1:6443`), puis applique le manifeste `calico.yaml` version `{{ calico_version }}` (`v3.31.4`) s'il n'est pas déjà présent.
    Voir [`docs/cni.md`](cni.md) pour le choix du CNI.
-4. **Commande join** — génère `kubeadm token create --print-join-command` et la stocke dans un
-   *fact* partagé (`kubeadm_join_command`) pour les workers.
-5. Affiche l'état des nœuds et des pods (`kubectl get nodes/pods`).
+4. **Commande join** génère `kubeadm token create --print-join-command` et la stocke dans un *fact* partagé (`kubeadm_join_command`) pour les workers.
+5. Affiche l'état des noeuds et des pods (`kubectl get nodes/pods`).
 
 ### `k8s_worker` (workers)
 
-1. Vérifie si le nœud est déjà joint (`/etc/kubernetes/kubelet.conf`).
+1. Vérifie si le noeud est déjà joint (`/etc/kubernetes/kubelet.conf`).
 2. Récupère `kubeadm_join_command` depuis les *hostvars* du master.
 3. Exécute la commande **`kubeadm join`** (token à usage unique généré par le master).
 4. Exporte `KUBECONFIG=/etc/kubernetes/kubelet.conf` dans `/root/.bashrc`.
 
-> Le `kubelet.conf` des workers offre des droits limités. Pour administrer le cluster,
-> passer par le master (`admin.conf`). Voir la note dans [`docs/initialize_vms.md`](initialize_vms.md).
+> Le `kubelet.conf` des workers offre des droits limités. Pour administrer le cluster, passer par le master (`admin.conf`). Voir la note dans [`docs/initialize_vms.md`](initialize_vms.md).
 
 ## Versions épinglées
 
-Les variables spécifiques à un rôle sont définies dans ses `defaults/main.yml` ; les variables
-transverses restent dans `group_vars/all.yml` (voir [`docs/ansible.md`](ansible.md)).
+Les variables spécifiques à un rôle sont définies dans ses `defaults/main.yml` ; les variables transverses restent dans `group_vars/all.yml` (voir [`docs/ansible.md`](ansible.md)).
 
 | Composant | Variable | Défini dans | Valeur |
 | --------- | -------- | ----------- | ------ |
@@ -121,11 +113,9 @@ sudo KUBECONFIG=/etc/kubernetes/admin.conf kubectl get nodes -o wide
 sudo KUBECONFIG=/etc/kubernetes/admin.conf kubectl get pods -A -o wide
 ```
 
-Tous les nœuds doivent être `Ready` (après convergence de Calico) et les pods
-`calico-node` / `coredns` en `Running`.
+Tous les noeuds doivent être `Ready` (après convergence de Calico) et les pods `calico-node` / `coredns` en `Running`.
 
 ## Étapes suivantes
 
-Une fois le cluster prêt, le reste de la stack se déploie via `deploy_all.yml` (ou playbook par
-playbook) : metrics-server → Sealed Secrets → Traefik → monitoring → Headlamp → sample-app.
+Une fois le cluster prêt, le reste de la stack se déploie via `deploy_all.yml` (ou playbook par playbook) : metrics-server → Sealed Secrets → Traefik → monitoring → Headlamp → sample-app.
 Voir [`docs/ansible.md`](ansible.md) pour l'ordre complet.

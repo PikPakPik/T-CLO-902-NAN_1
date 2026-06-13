@@ -105,5 +105,5 @@
         msg:
           - "Node drainé     : {{ target_node }}"
           - "Nodes cordonnés : {{ cordon_nodes | join(', ') }}"
-          - "Le pod expulsé est en Pending — seul le replica sur {{ mysql_node_name }} répond."
+          - "Le pod expulsé est en Pending seul le replica sur {{ mysql_node_name }} répond."
           - "Lancer demo_restore_worker.yml pour rétablir le cluster."

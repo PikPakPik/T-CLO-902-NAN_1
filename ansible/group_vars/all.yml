@@ -2,7 +2,7 @@
 k8s_master_config: "/etc/kubernetes/admin.conf"
 k8s_worker_config: "/etc/kubernetes/kubelet.conf"
 
-# Gateway API (HTTPRoute, etc.) — requis avant les HTTPRoutes monitoring/headlamp
+# Gateway API (HTTPRoute, etc.) requis avant les HTTPRoutes monitoring/headlamp
 gateway_api_crds_url: https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.5.1/standard-install.yaml
 
 master_public_ip: "{{ hostvars[groups['k8s_master'][0]].ansible_host }}"

@@ -8,17 +8,23 @@ Dans ce projet, Helm sert à déployer l'application Laravel et sa base de donn�
 ## Structure du Chart (`charts/sample-app/`)
 - `Chart.yaml` : Informations générales du chart (nom, version).
 - `values.yaml` : Fichier de variables (réplicas, image Docker, identifiants BDD).
-- `values.sealed.yaml` : Secrets applicatifs chiffrés (APP_KEY, mot de passe BDD) — versionné dans Git.
+- `values.sealed.yaml` : Secrets applicatifs chiffrés (APP_KEY, mot de passe BDD) versionné dans Git.
 - `sealed-secrets.example.yaml` : Exemple de structure pour `values.sealed.yaml`.
 - `templates/` : Fichiers YAML déployés sur Kubernetes :
-  - `deployment.yaml` : Déploiement de l'application Laravel (2 réplicas).
+  - `deployment.yaml` : Déploiement de l'application Laravel (2 réplicas par défaut ; le HPA ajuste entre `minReplicas` et `maxReplicas`, soit **2 à 5**, quand `autoscaling.enabled: true`).
   - `mysql.yaml` : Déploiement MySQL + Service + PersistentVolumeClaim.
   - `mysql-backup-cronjob.yaml` : CronJob de backup BDD (`mysqldump`) + PVC de stockage des dumps.
   - `migration-job.yaml` : Job de migration BDD exécuté après installation/mise à jour (Helm Hook post-install/post-upgrade).
   - `sealedsecret.yaml` : SealedSecret contenant APP_KEY et le mot de passe BDD (mode recommandé).
   - `secrets.yaml` : Secret Kubernetes en clair (mode legacy, désactivé par défaut).
   - `hpa.yaml` : HorizontalPodAutoscaler (optionnel, si `autoscaling.enabled: true`).
-  - `httproute.yaml` : HTTPRoute Gateway API pour exposer l'app via le Gateway public (Traefik).
+  - `httproute.yaml` : HTTPRoute Gateway API exposant l'app via le Gateway public (Traefik, listener `websecure` / **HTTPS**) activé par défaut (`httpRoute.enabled: true`).
+  - `ingress.yaml` : Ingress classique (mode **legacy**, désactivé par défaut `ingress.enabled: false`).
+  - `service.yaml` : Service ClusterIP de l'application.
+  - `serviceaccount.yaml` : ServiceAccount de l'application.
+  - `_helpers.tpl` : helpers de nommage et labels du chart.
+  - `NOTES.txt` : message affiché par Helm après installation.
+  - `tests/test-connection.yaml` : test Helm (`helm test`) de connectivité au service.
 
 > Le Secret d'authentification au registry GHCR (`ghcr-registry`) n'est **pas** un template du chart : il est créé au déploiement par Ansible (`kubectl create secret docker-registry`) à partir de `GITHUB_USER` / `GITHUB_TOKEN`, puis référencé via `imagePullSecrets`.
 
@@ -28,7 +34,7 @@ Dans ce projet, Helm sert à déployer l'application Laravel et sa base de donn�
 
 ## Prérequis locaux
 
-- [`kubeseal`](https://github.com/bitnami-labs/sealed-secrets/releases) CLI installé (version identique au controller, voir `ansible/roles/sealed_secrets/defaults/main.yml` → `sealed_secrets_chart_version`).
+- [`kubeseal`](https://github.com/bitnami-labs/sealed-secrets/releases) CLI installé (version identique au contrôleur, voir `ansible/roles/sealed_secrets/defaults/main.yml` → `sealed_secrets_controller_version`, soit `0.32.2`).
 
 ```bash
 VERSION="0.32.2"
@@ -42,7 +48,7 @@ rm -f kubeseal "kubeseal-${VERSION}-linux-amd64.tar.gz"
 
 ### 0. Récupérer le certificat du cluster (une fois par cluster)
 
-Le fichier `ansible/sealed-secrets.pem` n'est pas versionné — il est propre à chaque cluster. Si le fichier n'existe pas (nouveau clone, nouveau cluster, réinstallation du controller), le régénérer.
+Le fichier `ansible/sealed-secrets.pem` n'est pas versionné il est propre à chaque cluster. Si le fichier n'existe pas (nouveau clone, nouveau cluster, réinstallation du controller), le régénérer.
 
 **Sur le master** (kubectl n'est pas configuré en local) :
 
@@ -58,7 +64,7 @@ Copier l'output (de `-----BEGIN CERTIFICATE-----` à `-----END CERTIFICATE-----`
 
 ### 1. Secrets applicatifs (APP_KEY, mot de passe BDD)
 
-Sceller `APP_KEY` et le mot de passe BDD avec `kubeseal`, puis reporter les chaînes chiffrées dans `encryptedData` de `charts/sample-app/values.sealed.yaml` (secret `app-sample-app-app-secrets`, namespace `sample-app`, scope `strict`). Commiter ce fichier (safe pour Git). Ne pas créer `sealed-secrets.yaml` manuellement — `sealed-secrets.example.yaml` est uniquement un exemple de structure. Procédure complète : [`docs/sealed-secrets.md`](sealed-secrets.md).
+Sceller `APP_KEY` et le mot de passe BDD avec `kubeseal`, puis reporter les chaînes chiffrées dans `encryptedData` de `charts/sample-app/values.sealed.yaml` (secret `app-sample-app-app-secrets`, namespace `sample-app`, scope `strict`). Commiter ce fichier (safe pour Git). Ne pas créer `sealed-secrets.yaml` manuellement `sealed-secrets.example.yaml` est uniquement un exemple de structure. Procédure complète : [`docs/sealed-secrets.md`](sealed-secrets.md).
 
 ### 2. Credentials GHCR (pull d'image)
 
@@ -85,7 +91,7 @@ Le chart est publié automatiquement sur GHCR à chaque push sur `main` via la C
 
 ## Commandes manuelles
 
-Toutes les commandes sont à exécuter depuis la racine du projet sur le nœud master.
+Toutes les commandes sont à exécuter depuis la racine du projet sur le noeud master.
 
 ### Vérifier la syntaxe
 ```bash
@@ -132,8 +138,8 @@ helm uninstall app -n sample-app
 
 Le chart peut déployer un HorizontalPodAutoscaler si `autoscaling.enabled: true`. Prérequis sur le cluster :
 
-1. **metrics-server** — installé par Ansible (`deploy_metrics_server.yml`, inclus dans `deploy_all.yml`). Sans lui, le HPA affiche `cpu: <unknown>/70%`.
-2. **CPU requests** sur les pods de l'app — définis via `resources.requests.cpu` dans les values (nécessaire pour calculer le pourcentage CPU).
+1. **metrics-server** installé par Ansible (`deploy_metrics_server.yml`, inclus dans `deploy_all.yml`). Sans lui, le HPA affiche `cpu: <unknown>/70%`.
+2. **CPU requests** sur les pods de l'app définis via `resources.requests.cpu` dans les values (nécessaire pour calculer le pourcentage CPU).
 
 Vérification :
 

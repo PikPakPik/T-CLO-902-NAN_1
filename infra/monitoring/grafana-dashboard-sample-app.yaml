@@ -10,7 +10,7 @@ data:
   sample-app-demo.json: |
     {
       "uid": "sample-app-demo",
-      "title": "Sample-app — Démo (CPU / Mémoire / HPA)",
+      "title": "Sample-app Démo (CPU / Mémoire / HPA)",
       "tags": ["kubequest", "sample-app", "demo"],
       "timezone": "browser",
       "schemaVersion": 39,
@@ -58,7 +58,7 @@ data:
         {
           "id": 2,
           "type": "timeseries",
-          "title": "CPU par pod — % du request (seuils HPA 70% / alerte 80%)",
+          "title": "CPU par pod % du request (seuils HPA 70% / alerte 80%)",
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
           "fieldConfig": {
@@ -78,7 +78,7 @@ data:
         {
           "id": 3,
           "type": "timeseries",
-          "title": "CPU par pod — cores (usage vs request vs limit)",
+          "title": "CPU par pod cores (usage vs request vs limit)",
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
           "fieldConfig": {
@@ -101,7 +101,7 @@ data:
         {
           "id": 4,
           "type": "timeseries",
-          "title": "Mémoire par pod — % du request (seuil alerte 80%)",
+          "title": "Mémoire par pod % du request (seuil alerte 80%)",
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
           "fieldConfig": {
@@ -121,7 +121,7 @@ data:
         {
           "id": 5,
           "type": "timeseries",
-          "title": "Mémoire par pod — octets (usage vs request vs limit)",
+          "title": "Mémoire par pod octets (usage vs request vs limit)",
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
           "fieldConfig": {
@@ -144,7 +144,7 @@ data:
         {
           "id": 6,
           "type": "timeseries",
-          "title": "Redémarrages conteneur (5m) — indicateur crashloop",
+          "title": "Redémarrages conteneur (5m) indicateur crashloop",
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
           "fieldConfig": {
@@ -172,7 +172,7 @@ data:
             { "refId": "A", "datasource": { "type": "prometheus", "uid": "${datasource}" }, "expr": "ALERTS{alertname=~'Demo.*', alertstate='firing'}", "format": "table", "instant": true }
           ],
           "transformations": [
-            { "id": "organize", "options": { "excludeByName": { "Time": true, "Value": true, "__name__": true, "endpoint": true, "instance": true, "job": true, "service": true, "container": true, "prometheus": true }, "renameByName": { "alertname": "Alerte", "alertstate": "État", "severity": "Sévérité", "demo": "Démo", "pod": "Pod", "namespace": "Namespace", "node": "Nœud" } } }
+            { "id": "organize", "options": { "excludeByName": { "Time": true, "Value": true, "__name__": true, "endpoint": true, "instance": true, "job": true, "service": true, "container": true, "prometheus": true }, "renameByName": { "alertname": "Alerte", "alertstate": "État", "severity": "Sévérité", "demo": "Démo", "pod": "Pod", "namespace": "Namespace", "node": "Noeud" } } }
           ]
         }
       ]

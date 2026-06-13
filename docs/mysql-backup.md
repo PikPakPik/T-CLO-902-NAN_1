@@ -12,7 +12,7 @@ Le chart Helm déploie une **CronJob** (`mysql-backup-cronjob.yaml`) qui :
 4. Stocke les fichiers sur un **PVC dédié** (`app-sample-app-mysql-backup`).
 5. Supprime les backups plus anciens que la durée de rétention configurée.
 
-L’image utilisée est `mysql:8.0` (client `mysqldump` inclus). Le mot de passe BDD est lu depuis le SealedSecret déjà déployé (`db-password`).
+L'image utilisée est `mysql:8.0` (client `mysqldump` inclus). Le mot de passe BDD est lu depuis le SealedSecret déjà déployé (`db-password`).
 
 ## Configuration
 
@@ -22,7 +22,7 @@ Les paramètres se trouvent dans `charts/sample-app/values.yaml` :
 database:
   backup:
     enabled: true          # false pour désactiver la CronJob et le PVC
-    schedule: "0 2 * * *"  # tous les jours à 02:00 (UTC du nœud)
+    schedule: "0 2 * * *"  # tous les jours à 02:00 (UTC du noeud)
     retentionDays: 7       # conservation des fichiers .sql.gz
     storage: 5Gi           # taille du PVC de backup
 ```
@@ -54,7 +54,7 @@ kubectl create job --from=cronjob/app-sample-app-mysql-backup \
   manual-backup-$(date +%s) -n sample-app
 ```
 
-Suivre l’exécution :
+Suivre l'exécution :
 
 ```bash
 kubectl get jobs -n sample-app | grep mysql-backup
@@ -127,7 +127,7 @@ kubectl run mysql-restore -n sample-app --rm -it --restart=Never \
   }'
 ```
 
-3. Vérifier que l’application fonctionne après restauration :
+3. Vérifier que l'application fonctionne après restauration :
 
 ```bash
 kubectl rollout status deployment/app-sample-app -n sample-app
@@ -140,7 +140,7 @@ kubectl rollout status deployment/app-sample-app -n sample-app
 | Job en `Error` / `CrashLoopBackOff` | `kubectl logs` sur le pod du job ; vérifier que MySQL répond (`kubectl get pods -n sample-app \| grep mysql`). |
 | `Access denied` | Le mot de passe dans le SealedSecret doit correspondre à `MYSQL_PASSWORD` / `MYSQL_USER` du déploiement MySQL. |
 | PVC `Pending` | Vérifier le StorageClass et la capacité disponible sur le cluster (`kubectl describe pvc app-sample-app-mysql-backup -n sample-app`). |
-| Disque plein | Augmenter `database.backup.storage` ou réduire `retentionDays` ; supprimer manuellement d’anciens `.sql.gz` via le pod `backup-shell`. |
+| Disque plein | Augmenter `database.backup.storage` ou réduire `retentionDays` ; supprimer manuellement d'anciens `.sql.gz` via le pod `backup-shell`. |
 | Aucun job planifié | Vérifier `database.backup.enabled: true` et que la CronJob existe (`kubectl get cronjob -n sample-app`). |
 
 ## Limites actuelles

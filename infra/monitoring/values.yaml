@@ -60,7 +60,7 @@ grafana:
     accessModes: ["ReadWriteOnce"]
     size: 5Gi
 
-# ----- Prometheus (interne uniquement — JAMAIS exposé publiquement, pas d'HTTPRoute) -----
+# ----- Prometheus (interne uniquement JAMAIS exposé publiquement, pas d'HTTPRoute) -----
 prometheus:
   service:
     type: ClusterIP
@@ -106,7 +106,7 @@ kube-state-metrics:
   nodeSelector:
     kubernetes.io/hostname: ip-10-0-3-198.eu-west-3.compute.internal
 
-# ----- node-exporter : un pod par nœud (DaemonSet) -----
+# ----- node-exporter : un pod par noeud (DaemonSet) -----
 prometheus-node-exporter:
   tolerations:
     - key: node-role.kubernetes.io/control-plane

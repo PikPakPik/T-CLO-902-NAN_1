@@ -8,7 +8,7 @@ flowchart TD
 
     subgraph local[Machine locale]
         code[Modification du code\nou du chart Helm]
-        sealed[values.sealed.yaml\nchiffré — versionné]
+        sealed[values.sealed.yaml\nchiffré versionné]
         gitops[gitops/sample-app/values.yaml\nconfig déploiement]
         ghcr_env[GITHUB_USER / GITHUB_TOKEN\nvariables d'environnement]
     end
@@ -22,16 +22,16 @@ flowchart TD
         end
     end
 
-    subgraph ghcr[GHCR — ghcr.io]
-        img[Image Docker\nsample-app:latest]
+    subgraph ghcr[GHCR ghcr.io]
+        img[Image Docker\nsample-app:SHA12]
         chart[Chart Helm OCI\ncharts/sample-app:0.1.0]
     end
 
-    subgraph ansible[Ansible — CI ou machine locale]
+    subgraph ansible[Ansible CI ou machine locale]
         playbook[deploy_app.yml\nvalues.sealed + gitops + registry\nHelm upgrade --install]
     end
 
-    subgraph cluster[Cluster Kubernetes — AWS]
+    subgraph cluster[Cluster Kubernetes AWS]
         helm_release[Release Helm : app\nNamespace : sample-app]
         sealed_ctrl[Sealed Secrets Controller]
         subgraph pods[Pods]

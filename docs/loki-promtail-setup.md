@@ -5,34 +5,37 @@
 La stack de logging complète la stack de monitoring déjà en place (Prometheus + Grafana) en ajoutant la collecte et la consultation des **logs applicatifs et système**.
 
 Prometheus collecte des métriques numériques (CPU, RAM, requêtes/sec). Loki collecte des logs textuels (messages d'erreur, traces applicatives, événements système). Les deux se visualisent dans Grafana.
+
+```
 ┌──────────────────────────────────────────────────────────┐
-│                    Grafana (UI)                           │
-│         Métriques (Prometheus) + Logs (Loki)             │
+│                       Grafana (UI)                        │
+│            Métriques (Prometheus) + Logs (Loki)           │
 └──────────────┬───────────────────────┬───────────────────┘
-│                       │
-┌───────▼───────┐       ┌───────▼───────┐
-│  Prometheus    │       │     Loki      │
-│  (métriques)   │       │    (logs)     │
-└───────▲───────┘       └───────▲───────┘
-│                       │
-┌───────┴───────┐       ┌───────┴───────┐
-│ node-exporter  │       │   Promtail    │
-│ (1 par nœud)   │       │ (1 par nœud)  │
-└───────────────┘       └───────────────┘
+               │                       │
+       ┌───────▼───────┐       ┌───────▼───────┐
+       │  Prometheus   │       │     Loki      │
+       │  (métriques)  │       │    (logs)     │
+       └───────▲───────┘       └───────▲───────┘
+               │                       │
+       ┌───────┴───────┐       ┌───────┴───────┐
+       │ node-exporter │       │   Promtail    │
+       │  1 par noeud  │       │  1 par noeud  │
+       └───────────────┘       └───────────────┘
+```
 
 ## Pourquoi ces choix
 
 ### Loki plutôt qu'Elasticsearch/EFK
 
-Loki est conçu par Grafana Labs spécifiquement pour Kubernetes. Contrairement à Elasticsearch (stack EFK), Loki n'indexe pas le contenu complet des logs — il indexe uniquement les labels (namespace, pod, container). Cela le rend beaucoup plus léger en ressources (RAM, CPU, stockage), ce qui est adapté à notre cluster de 4 nœuds EC2 t4g.medium avec des ressources limitées. De plus, Loki s'intègre nativement avec Grafana, qui est déjà installé via kube-prometheus-stack.
+Loki est conçu par Grafana Labs spécifiquement pour Kubernetes. Contrairement à Elasticsearch (stack EFK), Loki n'indexe pas le contenu complet des logs il indexe uniquement les labels (namespace, pod, container). Cela le rend beaucoup plus léger en ressources (RAM, CPU, stockage), ce qui est adapté à notre cluster de 4 noeuds EC2 t4g.medium avec des ressources limitées. De plus, Loki s'intègre nativement avec Grafana, qui est déjà installé via kube-prometheus-stack.
 
 ### Promtail plutôt que Fluentd/Fluent Bit
 
-Promtail est le collecteur natif de Loki. Il est déployé en DaemonSet (un pod par nœud), lit les fichiers de logs des conteneurs directement sur le disque de chaque nœud, et les envoie à Loki avec les labels Kubernetes enrichis automatiquement (namespace, pod, container, node). Pas besoin de configuration complexe — il détecte automatiquement tous les pods.
+Promtail est le collecteur natif de Loki. Il est déployé en DaemonSet (un pod par noeud), lit les fichiers de logs des conteneurs directement sur le disque de chaque noeud, et les envoie à Loki avec les labels Kubernetes enrichis automatiquement (namespace, pod, container, node). Pas besoin de configuration complexe il détecte automatiquement tous les pods.
 
 ### Mode SingleBinary
 
-Loki peut s'exécuter en mode distribué (read, write, backend séparés) ou en mode SingleBinary (tout dans un seul pod). Pour notre cluster de 4 nœuds, le mode SingleBinary est suffisant et beaucoup plus simple à opérer.
+Loki peut s'exécuter en mode distribué (read, write, backend séparés) ou en mode SingleBinary (tout dans un seul pod). Pour notre cluster de 4 noeuds, le mode SingleBinary est suffisant et beaucoup plus simple à opérer.
 
 ### Stockage filesystem avec persistance
 
@@ -62,7 +65,7 @@ ansible-playbook deploy_all.yml --tags logging
 # Vérifier que Loki tourne (2/2 Running)
 kubectl get pods -n monitoring | grep loki
 
-# Vérifier que Promtail tourne (1 pod par nœud)
+# Vérifier que Promtail tourne (1 pod par noeud)
 kubectl get pods -n monitoring | grep promtail
 
 # Vérifier que Loki est prêt
@@ -82,22 +85,22 @@ kubectl exec -n monitoring loki-0 -- wget -qO- http://localhost:3100/ready
 
 ### Requêtes de base
 
-- `{namespace="sample-app"}` — Tous les logs de l'application
-- `{namespace="kube-system"}` — Logs du control plane Kubernetes
-- `{namespace="monitoring", container="grafana"}` — Logs d'un conteneur spécifique
+- `{namespace="sample-app"}` Tous les logs de l'application
+- `{namespace="kube-system"}` Logs du control plane Kubernetes
+- `{namespace="monitoring", container="grafana"}` Logs d'un conteneur spécifique
 
 ### Filtres sur le contenu
 
-- `{namespace="sample-app"} |= "error"` — Lignes contenant "error"
-- `{namespace="sample-app"} != "debug"` — Exclure les lignes "debug"
-- `{namespace="sample-app"} |~ "error|warning"` — Regex : error OU warning
+- `{namespace="sample-app"} |= "error"` Lignes contenant "error"
+- `{namespace="sample-app"} != "debug"` Exclure les lignes "debug"
+- `{namespace="sample-app"} |~ "error|warning"` Regex : error OU warning
 
 ### Pour la soutenance
 
 Pendant la démo d'auto-scaling et de rollback :
 
 ```logql
-{namespace="sample-app", container="app"} |= "error"
+{namespace="sample-app", container="sample-app"} |= "error"
 ```
 
 ## Versions installées

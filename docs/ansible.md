@@ -6,10 +6,8 @@ et l'**ordre d'orchestration**.
 
 ## Principe général
 
-- Les playbooks ciblent les EC2 via SSH ; le **master** sert de **bastion** pour les workers
-  (réseau privé VPC). Voir [`docs/ssh.md`](ssh.md).
-- Le master possède le kubeconfig admin (`/etc/kubernetes/admin.conf`) ; c'est depuis lui que
-  s'exécutent les actions `kubectl` / `helm` (modules `kubernetes.core`).
+- Les playbooks ciblent les EC2 via SSH ; le **master** sert de **bastion** pour les workers (réseau privé VPC). Voir [`docs/ssh.md`](ssh.md).
+- Le master possède le kubeconfig admin (`/etc/kubernetes/admin.conf`) ; c'est depuis lui que s'exécutent les actions `kubectl` / `helm` (modules `kubernetes.core`).
 - Chaque playbook est un *wrapper* mince autour d'un ou plusieurs **rôles**.
 
 ## Inventaire (`inventory.yml`)
@@ -18,11 +16,11 @@ et l'**ordre d'orchestration**.
 flowchart LR
     laptop[💻 Machine locale / Runner CI] -->|SSH direct| master
     laptop -. ProxyCommand via master .-> w1 & w2 & w3
-    subgraph vpc[VPC AWS — 10.0.3.0/24]
+    subgraph vpc[VPC AWS > 10.0.3.0/24]
         master[master\n15.237.15.14 publique\n10.0.3.214 interne]
-        w1[worker1 — 10.0.3.198]
-        w2[worker2 — 10.0.3.187]
-        w3[worker3 — 10.0.3.213]
+        w1[worker1 > 10.0.3.198]
+        w2[worker2 > 10.0.3.187]
+        w3[worker3 > 10.0.3.213]
     end
 ```
 
@@ -41,8 +39,9 @@ Variables communes (`all.vars`) :
 | `ansible_ssh_private_key_file` | `~/.ssh/kubequest.pem` |
 
 Les workers définissent `ansible_ssh_common_args` avec un `ProxyCommand` qui rebondit sur
-`ec2-user@15.237.15.14`. Seul le master expose une IP publique ; le port **80** est le seul port
-applicatif ouvert (voir [`docs/traefik-architecture.md`](traefik-architecture.md)).
+`ec2-user@15.237.15.14`. Seul le master expose une IP publique ; les ports applicatifs ouverts sont
+le **80** (redirection HTTP→HTTPS + challenge ACME) et le **443** (HTTPS), voir
+[`docs/traefik-architecture.md`](traefik-architecture.md).
 
 ## Configuration (`ansible.cfg`)
 
@@ -59,10 +58,8 @@ applicatif ouvert (voir [`docs/traefik-architecture.md`](traefik-architecture.md
 
 Les variables sont réparties en deux endroits :
 
-1. **`group_vars/all.yml`** — variables **transverses** (partagées par plusieurs rôles) et
-   *facts* dérivés de l'inventaire.
-2. **`roles/<rôle>/defaults/main.yml`** — variables **spécifiques** à un rôle (versions,
-   namespaces, URLs de manifestes propres au composant).
+1. **`group_vars/all.yml`** variables **transverses** (partagées par plusieurs rôles) et *facts* dérivés de l'inventaire.
+2. **`roles/<rôle>/defaults/main.yml`** variables **spécifiques** à un rôle (versions, namespaces, URLs de manifestes propres au composant).
 
 ### Transverses (`group_vars/all.yml`)
 
@@ -85,27 +82,29 @@ Les variables sont réparties en deux endroits :
 | `traefik` | `traefik_chart_version` (`v40.2.0`), `traefik_namespace`, `gateway_name` (`public-gateway`), `traefik_kustomize_src` (config Helm → `infra/traefik/values.yaml`) |
 | `cert_manager` | `cert_manager_chart_version` (`v1.20.2`), `cert_manager_namespace`, `cert_manager_kustomize_src` (config Helm → `infra/cert-manager/values.yaml` ; ClusterIssuers/Certificate → `infra/cert-manager/`) |
 | `monitoring` | `monitoring_namespace`, `monitoring_chart_version` (`85.0.3`), `monitoring_storage_class`, `local_path_storage_kustomize_src` (manifest `v0.0.36` + patches → `infra/local-path-storage/`), `local_path_provisioner_rollout_timeout`, `monitoring_kustomize_src` (config applicative → `infra/monitoring/values.yaml`) |
+| `dex` | `dex_chart_version` (`0.23.0`), `dex_namespace`, `dex_kustomize_src` |
+| `loki` | `loki_chart_version` (`7.0.0`), `promtail_chart_version` (`6.17.1`), `loki_namespace` (`monitoring`) |
 | `headlamp` | `headlamp_namespace`, `headlamp_chart_repo_url`, `headlamp_kustomize_src` |
 
-> Règle : une variable utilisée par **un seul** rôle vit dans ses `defaults` ; une variable
-> partagée (ou un *fact* d'inventaire) vit dans `group_vars/all.yml`. Pour surcharger une valeur
-> par défaut de rôle, la (re)définir dans `group_vars/all.yml` (priorité supérieure aux `defaults`).
+> Règle : une variable utilisée par **un seul** rôle vit dans ses `defaults` ; une variable partagée (ou un *fact* d'inventaire) vit dans `group_vars/all.yml`. Pour surcharger une valeur par défaut de rôle, la (re)définir dans `group_vars/all.yml` (priorité supérieure aux `defaults`).
 
 ## Catalogue des rôles
 
 | Rôle | Rôle joué | Doc |
 | ---- | --------- | --- |
-| `k8s_common` | Préparation des nœuds (swap, modules, containerd, paquets k8s) | [cluster-setup](cluster-setup.md) |
+| `k8s_common` | Préparation des noeuds (swap, modules, containerd, paquets k8s) | [cluster-setup](cluster-setup.md) |
 | `k8s_ansible_deps` | Prérequis `kubernetes.core` (pip, Helm) sur le master | [cluster-setup](cluster-setup.md) |
 | `k8s_master` | `kubeadm init`, Calico, génération du join | [cluster-setup](cluster-setup.md) |
 | `k8s_worker` | `kubeadm join` | [cluster-setup](cluster-setup.md) |
 | `metrics_server` | metrics-server (HPA / `kubectl top`) | [metrics-server](metrics-server.md) |
 | `sealed_secrets` | Contrôleur Sealed Secrets (Helm) | [sealed-secrets](sealed-secrets.md) |
 | `traefik` | Traefik + Gateway API (CRDs, GatewayClass, Gateway) | [traefik-architecture](traefik-architecture.md) |
-| `cert_manager` | cert-manager (Helm) + ClusterIssuers Let's Encrypt + Certificate wildcard TLS | — |
+| `cert_manager` | cert-manager (Helm) + ClusterIssuers Let's Encrypt + Certificate TLS | [cert-manager](cert-manager.md) |
+| `dex` | Dex IDP (SSO OIDC Grafana, Headlamp) | [dex](dex.md) |
 | `monitoring` | kube-prometheus-stack + HTTPRoutes | [monitoring](monitoring.md) |
+| `loki` | Loki (logs) + Promtail (collecte) | [loki-promtail-setup](loki-promtail-setup.md) |
 | `headlamp` | Headlamp (Helm + Kustomize) | [headlamp](headlamp.md) |
-| `test_connectivity` | Vérification SSH/hostnames des nœuds | ci-dessous |
+| `test_connectivity` | Vérification SSH/hostnames des noeuds | ci-dessous |
 
 ## Catalogue des playbooks
 
@@ -117,7 +116,11 @@ Les variables sont réparties en deux endroits :
 | `deploy_sealed_secrets.yml` | `sealed_secrets` | master |
 | `install_traefik.yml` | `traefik` (tasks `install`) | master |
 | `deploy_traefik.yml` | `traefik` (tasks `deploy`) | master |
+| `install_cert_manager.yml` | `cert_manager` (tasks `install`) | master |
+| `deploy_cert_manager.yml` | `cert_manager` (tasks `deploy`) | master |
+| `deploy_dex.yml` | `dex` | master |
 | `deploy_monitoring.yml` | `monitoring` | master |
+| `deploy_loki.yml` | `loki` | master |
 | `deploy_headlamp.yml` | `headlamp` | master |
 | `deploy_app.yml` | déploiement Helm `sample-app` + secret GHCR | master |
 | `cleanup_traefik.yml` | suppression des ressources Traefik | master |
@@ -132,12 +135,13 @@ Le déploiement complet enchaîne les playbooks dans cet ordre :
 flowchart LR
     a[test_connectivity] --> b[setup_cluster] --> c[metrics_server]
     c --> d[sealed_secrets] --> e[install_traefik] --> f[deploy_traefik]
-    f --> g[monitoring] --> h[headlamp] --> i[deploy_app]
+    f --> g[cert_manager] --> h[dex] --> i[monitoring]
+    i --> j[loki] --> k[headlamp] --> l[deploy_app]
 ```
 
 ```bash
 cd ansible
-ansible-playbook -i inventory.yml deploy_all.yml
+ansible-playbook -i ansible/inventory.yml ansible/deploy_all.yml
 ```
 
 Chaque étape porte un **tag** permettant une exécution ciblée :
@@ -149,25 +153,24 @@ Chaque étape porte un **tag** permettant une exécution ciblée :
 | `metrics-server` | metrics-server seul |
 | `sealed-secrets` | Contrôleur Sealed Secrets |
 | `gateway` | Traefik (install + deploy) |
+| `cert-manager` | cert-manager + ClusterIssuers + Certificate TLS |
+| `dex` | Dex IDP (SSO) |
 | `monitoring` | Prometheus/Grafana |
+| `logging` | Loki + Promtail |
 | `headlamp` | Headlamp |
 | `app` | sample-app |
 
 ```bash
 # Exemple : (re)déployer uniquement le monitoring
-ansible-playbook -i inventory.yml deploy_all.yml --tags monitoring
+ansible-playbook -i ansible/inventory.yml ansible/deploy_all.yml --tags monitoring
 ```
 
-> Prérequis `sample-app` (une seule fois) : exporter `GITHUB_USER` et `GITHUB_TOKEN`
-> (scope `read:packages`) pour créer le secret `ghcr-registry`. Voir [`docs/helm.md`](helm.md).
+> Prérequis `sample-app` (une seule fois) : exporter `GITHUB_USER` et `GITHUB_TOKEN` (scope `read:packages`) pour créer le secret `ghcr-registry`. Voir [`docs/helm.md`](helm.md).
 
 ## Playbook `test_connectivity.yml`
 
-Vérifie que tous les nœuds (`k8s_cluster`) sont joignables : module `ping` Ansible +
-récupération du hostname, affichage de `ansible_host`, `internal_ip`, `ansible_user`,
-`ansible_os_family`. Sert de *smoke test* avant tout déploiement (et en CI, voir
-[`docs/ci-cd.md`](ci-cd.md)).
+Vérifie que tous les noeuds (`k8s_cluster`) sont joignables : module `ping` Ansible + récupération du hostname, affichage de `ansible_host`, `internal_ip`, `ansible_user`, `ansible_os_family`. Sert de *smoke test* avant tout déploiement (et en CI, voir [`docs/ci-cd.md`](ci-cd.md)).
 
 ```bash
-ansible-playbook -i inventory.yml test_connectivity.yml
+ansible-playbook -i ansible/inventory.yml ansible/test_connectivity.yml
 ```

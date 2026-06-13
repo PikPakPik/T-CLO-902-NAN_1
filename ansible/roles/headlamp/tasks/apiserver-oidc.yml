@@ -7,7 +7,7 @@
 - name: "[HEADLAMP][apiserver] Échouer si le manifeste kube-apiserver est introuvable"
   ansible.builtin.fail:
     msg: >-
-      {{ headlamp_apiserver_manifest }} introuvable. Cette tâche doit s'exécuter sur le nœud
+      {{ headlamp_apiserver_manifest }} introuvable. Cette tâche doit s'exécuter sur le noeud
       control-plane (deploy_headlamp.yml cible bien k8s_master).
   when: not headlamp_apiserver_stat.stat.exists
 

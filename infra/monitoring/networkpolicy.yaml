@@ -1,5 +1,5 @@
 ---
-# Prometheus :9090 — n'accepte que Grafana (requêtes) et lui-même (self-scrape /metrics + reloader).
+# Prometheus :9090 n'accepte que Grafana (requêtes) et lui-même (self-scrape /metrics + reloader).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -27,7 +27,7 @@ spec:
         - port: 8080
           protocol: TCP
 ---
-# Alertmanager :9093 — n'accepte que Prometheus (envoi d'alertes + scrape),
+# Alertmanager :9093 n'accepte que Prometheus (envoi d'alertes + scrape),
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -66,7 +66,7 @@ spec:
         - port: 9093
           protocol: TCP
 ---
-# kube-state-metrics :8080 — scrapé uniquement par Prometheus.
+# kube-state-metrics :8080 scrapé uniquement par Prometheus.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:

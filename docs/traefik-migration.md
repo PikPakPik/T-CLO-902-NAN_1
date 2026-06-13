@@ -25,7 +25,7 @@ Envoy Gateway nécessite la création d'une ressource `EnvoyProxy` custom pour c
 
 Les contraintes du projet sont :
 - **Pas de création de ressources AWS supplémentaires** (pas de NLB, pas de modification de Security Groups)
-- **Seul le port 80 est ouvert** sur l'IP publique du master (15.237.15.14)
+- **Le port 80 est ouvert** sur l'IP publique du master (15.237.15.14) le **443 (HTTPS)** a été ajouté par la suite avec cert-manager (voir [docs/cert-manager.md](cert-manager.md))
 - Le cluster est auto-géré sans cloud-controller
 
 Envoy Gateway n'offre pas de moyen simple de binder directement le port 80 sur le noeud master via hostNetwork.
@@ -34,7 +34,7 @@ Envoy Gateway n'offre pas de moyen simple de binder directement le port 80 sur l
 
 ### 1. Support natif de hostNetwork
 
-Traefik supporte nativement le mode `hostNetwork` via son Helm chart, permettant au pod de binder directement sur les ports de l'hôte (port 80) sans passer par un Service Kubernetes.
+Traefik supporte nativement le mode `hostNetwork` via son Helm chart, permettant au pod de binder directement sur les ports de l'hôte (**80** et **443**) sans passer par un Service Kubernetes.
 
 ### 2. Provider Kubernetes Gateway intégré
 
@@ -46,7 +46,7 @@ Avec Traefik :
 - **Pas de Service LoadBalancer** nécessaire (`service.enabled: false`)
 - **hostNetwork** configuré directement dans les values Helm
 - **nodeSelector + tolerations** pour épingler le pod sur le master (control-plane)
-- Le GatewayClass est créé automatiquement par le chart Helm
+- Le GatewayClass et le Gateway sont définis de façon **déclarative** dans `infra/traefik/` et appliqués via Kustomize (ils ne sont pas créés par le chart Helm)
 
 ### 4. Maturité et communauté
 
@@ -57,7 +57,7 @@ Traefik est un reverse proxy / ingress controller mature, largement utilisé dan
 | Aspect | Envoy Gateway | Traefik |
 |--------|---------------|---------|
 | Service exposé | LoadBalancer (Pending) | Aucun (hostNetwork) |
-| Port d'écoute | Port aléatoire NodePort | Port 80 directement |
+| Port d'écoute | Port aléatoire NodePort | Ports 80 et 443 directement (hostNetwork) |
 | Configuration hostNetwork | Non supporté simplement | Natif via Helm values |
 | Ressources custom | EnvoyProxy CRD | Aucune |
 | Gateway API | Support complet | Support complet |

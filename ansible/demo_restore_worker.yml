@@ -41,4 +41,4 @@
 
     - name: "[DEMO] Résumé"
       ansible.builtin.debug:
-        msg: "Cluster restauré — tous les workers sont de nouveau schedulables."
+        msg: "Cluster restauré tous les workers sont de nouveau schedulables."

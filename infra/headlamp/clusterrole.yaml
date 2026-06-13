@@ -22,7 +22,7 @@ rules:
       - serviceaccounts
       - services
     verbs: ["get", "list", "watch"]
-  # Secrets (lecture seule — affichage APP_KEY, etc. dans Headlamp)
+  # Secrets (lecture seule affichage APP_KEY, etc. dans Headlamp)
   - apiGroups: [""]
     resources:
       - secrets

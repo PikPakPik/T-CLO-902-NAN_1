@@ -1,17 +1,17 @@
 # KubeQuest — T-CLO-902
 
-Déploiement d'un cluster **Kubernetes auto-géré sur AWS EC2** (Amazon Linux 2023), entièrement
-automatisé avec **Ansible**, et hébergeant :
+Déploiement d'un cluster **Kubernetes auto-géré sur AWS EC2** (Amazon Linux 2023), entièrement automatisé avec **Ansible**, et hébergeant :
 
 - une application **Laravel** (`sample-app`) + base **MySQL 8.0**, packagée en **chart Helm** ;
 - une stack de **monitoring** (Prometheus, Grafana, Alertmanager, node-exporter) ;
+- une stack de **logging** (Loki + Promtail) intégrée à Grafana ;
 - un tableau de bord **Headlamp** ;
-- un contrôleur **Traefik** (Gateway API) pour l'exposition HTTP ;
+- un contrôleur **Traefik** (Gateway API) exposant les services en **HTTPS** (certificats TLS Let's Encrypt émis par **cert-manager**) ;
+- un **SSO** via **Dex** (OIDC) pour Grafana et Headlamp ;
 - la gestion des secrets via **Sealed Secrets** ;
 - des **backups MySQL** automatiques (CronJob).
 
-> Ce README est le guide d'**installation complet, pas à pas**. Pour les détails de chaque
-> composant, voir le dossier [`docs/`](docs/) (liens en bas de page).
+> Ce README est le guide d'**installation complet, pas à pas**. Pour les détails de chaque composant, voir le dossier [`docs/`](docs/) (liens en bas de page).
 
 ---
 
@@ -24,17 +24,19 @@ automatisé avec **Ansible**, et hébergeant :
 | Préparation des VM / install Kubernetes manuelle | [docs/initialize_vms.md](docs/initialize_vms.md) |
 | Connexion SSH (bastion / ProxyCommand) | [docs/ssh.md](docs/ssh.md) |
 | Choix du CNI (Calico) | [docs/cni.md](docs/cni.md) |
-| Traefik — architecture | [docs/traefik-architecture.md](docs/traefik-architecture.md) |
+| Traefik architecture | [docs/traefik-architecture.md](docs/traefik-architecture.md) |
 | Migration Envoy → Traefik | [docs/traefik-migration.md](docs/traefik-migration.md) |
+| HTTPS / TLS (cert-manager, Let's Encrypt) | [docs/cert-manager.md](docs/cert-manager.md) |
 | Sealed Secrets | [docs/sealed-secrets.md](docs/sealed-secrets.md) |
 | Déploiement Helm (sample-app) | [docs/helm.md](docs/helm.md) |
 | metrics-server & autoscaling (HPA) | [docs/metrics-server.md](docs/metrics-server.md) |
 | Monitoring (Prometheus/Grafana) | [docs/monitoring.md](docs/monitoring.md) |
+| Logging (Loki + Promtail) | [docs/loki-promtail-setup.md](docs/loki-promtail-setup.md) |
 | Dex IDP (SSO Grafana, comptes locaux) | [docs/dex.md](docs/dex.md) |
 | Headlamp | [docs/headlamp.md](docs/headlamp.md) |
 | Backups MySQL | [docs/mysql-backup.md](docs/mysql-backup.md) |
 | Flux de déploiement CI/CD | [docs/deployment-flow.md](docs/deployment-flow.md) |
-| CI/CD — workflows GitHub Actions | [docs/ci-cd.md](docs/ci-cd.md) |
+| CI/CD workflows GitHub Actions | [docs/ci-cd.md](docs/ci-cd.md) |
 | GitOps (sans ArgoCD) | [docs/gitops.md](docs/gitops.md) |
 
 ## Équipe
@@ -53,7 +55,7 @@ automatisé avec **Ansible**, et hébergeant :
 
 ```
                         Internet
-                           │  (port 80)
+                           │  (80 HTTP → 443 HTTPS)
                            ▼
               ┌──────────────────────────┐
               │  AWS Security Group      │
@@ -64,7 +66,7 @@ automatisé avec **Ansible**, et hébergeant :
    ┌───────────────────────────────────────────────┐
    │ MASTER  (control-plane)   15.237.15.14        │
    │   • kube-apiserver / etcd / scheduler         │
-   │   • Traefik (hostNetwork :80)                 │
+   │   • Traefik (hostNetwork :80, :443)           │
    │   • SealedSecret                              │
    └───────────────────┬───────────────────────────┘
                        │  réseau interne VPC (Calico)
@@ -79,25 +81,23 @@ automatisé avec **Ansible**, et hébergeant :
    └─────────────┘ └─────────────┘ └──────────────┘
 ```
 
-> \* Le **contrôleur Sealed Secrets** (namespace `kube-system`) n'est **pas épinglé** : installé
-> sans `nodeSelector` ni tolération du taint control-plane, il est placé par le scheduler sur un
-> **worker quelconque** (Worker3 dans l'exemple). Son emplacement peut changer après un
-> redémarrage du pod — c'est normal et sans impact (le déchiffrement reste cluster-wide).
+> \* Le **contrôleur Sealed Secrets** (namespace `kube-system`) n'est **pas épinglé** : installé sans `nodeSelector` ni tolération du taint control-plane, il est placé par le scheduler sur un **worker quelconque** (Worker3 dans l'exemple). Son emplacement peut changer après un redémarrage du pod c'est normal et sans impact (le déchiffrement reste cluster-wide).
 
-> La **stack monitoring** (Prometheus, Grafana, Alertmanager, prometheus-operator,
-> kube-state-metrics) est **épinglée sur Worker1**. Seul `node-exporter` tourne sur tous les workers.
+> La **stack monitoring** (Prometheus, Grafana, Alertmanager, prometheus-operator, kube-state-metrics) est **épinglée sur Worker1**. Seul `node-exporter` tourne sur tous les workers.
 
 | Composant | Rôle | Emplacement |
 | --------- | ---- | ----------- |
-| **Master** | Control-plane + bastion SSH + Traefik | EC2 publique `15.237.15.14` |
-| **Worker 1** | Stack monitoring (Prometheus/Grafana/Alertmanager) + Headlamp + apps | EC2 privée |
-| **Worker 2/3** | Nœuds applicatifs | EC2 privées (accès via bastion master) |
+| **Master** | Control-plane + bastion SSH + Traefik + cert-manager | EC2 publique `15.237.15.14` |
+| **Worker 1** | Stack monitoring (Prometheus/Grafana/Alertmanager) + apps | EC2 privée |
+| **Worker 2** | Dex IDP + apps | EC2 privée (accès via bastion master) |
+| **Worker 3** | Headlamp + apps | EC2 privée (accès via bastion master) |
+| **Logging** | Loki (SingleBinary, non épinglé) + Promtail (DaemonSet) | namespace `monitoring` |
 | **Sealed Secrets** | Contrôleur de déchiffrement (`kube-system`, non épinglé) | un worker (scheduler) |
-| **CNI** | Calico `v3.31.4` | tous les nœuds |
+| **cert-manager** | Émission/renouvellement TLS (Let's Encrypt) | namespace `cert-manager` |
+| **CNI** | Calico `v3.31.4` | tous les noeuds |
 | **Kubernetes** | `v1.35` (kubeadm) | — |
 
-> Le **master est le seul nœud accessible depuis Internet**. Les workers sont joints en SSH via
-> un **ProxyCommand** (jump host) à travers le master. Voir [docs/ssh.md](docs/ssh.md).
+> Le **master est le seul noeud accessible depuis Internet**. Les workers sont joints en SSH via un **ProxyCommand** (jump host) à travers le master. Voir [docs/ssh.md](docs/ssh.md).
 
 ---
 
@@ -131,11 +131,9 @@ chmod 600 ~/.ssh/kubequest.pem
 
 - Amazon Linux 2023, utilisateur `ec2-user` avec `sudo`.
 - Python `3.9` (`/usr/bin/python3.9`).
-- **Security Group** : port **22** (SSH, au moins sur le master) et port **80** (HTTP) ouverts sur le master.
+- **Security Group** : ports **22** (SSH, au moins sur le master), **80** (HTTP redirection vers HTTPS + challenge ACME Let's Encrypt) et **443** (HTTPS) ouverts sur le master.
 
-> L'installation des paquets (containerd, kubeadm, kubelet, kubectl), la désactivation du swap et
-> la configuration réseau sont prises en charge par le rôle `k8s_common`. Le détail manuel
-> équivalent est documenté dans [docs/initialize_vms.md](docs/initialize_vms.md).
+> L'installation des paquets (containerd, kubeadm, kubelet, kubectl), la désactivation du swap et la configuration réseau sont prises en charge par le rôle `k8s_common`. Le détail manuel équivalent est documenté dans [docs/initialize_vms.md](docs/initialize_vms.md).
 
 ---
 
@@ -152,7 +150,7 @@ chmod 600 ~/.ssh/kubequest.pem
 │                            #   monitoring, headlamp, sealed_secrets, ...
 ├── charts/sample-app/       # Chart Helm de l'application Laravel + MySQL
 ├── gitops/sample-app/       # Values GitOps (image, réplicas, HPA)
-├── infra/                   # Manifests Kustomize (traefik, dex, monitoring, headlamp)
+├── infra/                   # Manifests Kustomize (traefik, cert-manager, dex, monitoring, loki, headlamp)
 ├── resources/sample-app-master/  # Code source Laravel
 ├── .github/workflows/       # CI/CD (build image, publish chart, deploy)
 └── docs/                    # Documentation détaillée par composant
@@ -162,8 +160,7 @@ chmod 600 ~/.ssh/kubequest.pem
 
 ## 4. Installation pas à pas
 
-> **Toutes les commandes Ansible se lancent depuis le dossier `ansible/`** (où se trouve
-> `ansible.cfg` qui pointe déjà vers `inventory.yml`).
+> **Toutes les commandes Ansible se lancent depuis le dossier `ansible/`** (où se trouve `ansible.cfg` qui pointe déjà vers `inventory.yml`).
 
 ```bash
 git clone <url-du-depot> T-CLO-902-NAN_1
@@ -193,17 +190,13 @@ Tous les hôtes doivent répondre (master en direct, workers via le ProxyCommand
 ### Étape 3 — Déploiement complet (recommandé)
 
 Un seul playbook orchestre tout l'enchaînement :
-`connectivité → cluster → metrics-server → sealed-secrets → Traefik → monitoring → Headlamp → sample-app`.
+`connectivité → cluster → metrics-server → sealed-secrets → Traefik → cert-manager → Dex → monitoring → Loki → Headlamp → sample-app`.
 
 ```bash
 ansible-playbook -i ansible/inventory.yml ansible/deploy_all.yml
 ```
 
-> **Important** : l'étape `sample-app` nécessite que les secrets aient été générés au préalable
-> (voir [Étape 5](#étape-5--préparer-les-secrets-sealed-secrets)) et que `GITHUB_USER` / `GITHUB_TOKEN`
-> soient exportés **une seule fois** (création du secret de registry GHCR). Si vous découvrez le projet,
-> lancez d'abord les étapes 4 → 5 puis l'étape 6, ou exécutez `deploy_all.yml` jusqu'au monitoring
-> (`--skip-tags app`) puis préparez les secrets avant de déployer l'app.
+> **Important** : l'étape `sample-app` nécessite que les secrets aient été générés au préalable (voir [Étape 5](#étape-5--préparer-les-secrets-sealed-secrets)) et que `GITHUB_USER` / `GITHUB_TOKEN` soient exportés **une seule fois** (création du secret de registry GHCR). Si vous découvrez le projet, lancez d'abord les étapes 4 → 5 puis l'étape 6, ou exécutez `deploy_all.yml` jusqu'au monitoring (`--skip-tags app`) puis préparez les secrets avant de déployer l'app.
 
 ### Étape 4 — Déploiement étape par étape (alternative / dépannage)
 
@@ -222,16 +215,22 @@ ansible-playbook -i ansible/inventory.yml ansible/deploy_all.yml --tags sealed-s
 # 4.4 Traefik (CRDs Gateway API + Helm + Gateway public)
 ansible-playbook -i ansible/inventory.yml ansible/deploy_all.yml --tags gateway
 
-# 4.5 Dex IDP (SSO — comptes locaux ; prérequis : SealedSecrets scellés — voir docs/dex.md)
+# 4.5 cert-manager (Helm + ClusterIssuers Let's Encrypt + certificat wildcard TLS)
+ansible-playbook -i ansible/inventory.yml ansible/deploy_all.yml --tags cert-manager
+
+# 4.6 Dex IDP (SSO comptes locaux ; prérequis : SealedSecrets scellés voir docs/dex.md)
 ansible-playbook -i ansible/inventory.yml ansible/deploy_all.yml --tags dex
 
-# 4.6 Stack monitoring (Prometheus / Grafana / Alertmanager + SSO Grafana via Dex)
+# 4.7 Stack monitoring (Prometheus / Grafana / Alertmanager + SSO Grafana via Dex)
 ansible-playbook -i ansible/inventory.yml ansible/deploy_all.yml --tags monitoring
 
-# 4.7 Headlamp (dashboard)
+# 4.8 Stack logging (Loki + Promtail, intégrés à Grafana)
+ansible-playbook -i ansible/inventory.yml ansible/deploy_all.yml --tags logging
+
+# 4.9 Headlamp (dashboard)
 ansible-playbook -i ansible/inventory.yml ansible/deploy_all.yml --tags headlamp
 
-# 4.8 Application Laravel + MySQL
+# 4.10 Application Laravel + MySQL
 ansible-playbook -i ansible/inventory.yml ansible/deploy_all.yml --tags app
 ```
 
@@ -244,25 +243,34 @@ Chaque étape dispose aussi de son playbook dédié, équivalent :
 | `metrics-server` | `deploy_metrics_server.yml` |
 | `sealed-secrets` | `deploy_sealed_secrets.yml` |
 | `gateway` | `install_traefik.yml` + `deploy_traefik.yml` |
+| `cert-manager` | `install_cert_manager.yml` + `deploy_cert_manager.yml` |
 | `dex` | `deploy_dex.yml` |
 | `monitoring` | `deploy_monitoring.yml` |
+| `logging` | `deploy_loki.yml` |
 | `headlamp` | `deploy_headlamp.yml` |
 | `app` | `deploy_app.yml` |
 
+### Étape 5 — Préparer les secrets (Sealed Secrets)
+
+Avant de déployer l'application (et le monitoring / Dex), les **secrets doivent être scellés** avec la clé publique du contrôleur Sealed Secrets du cluster cible :
+
+- **sample-app** : `APP_KEY` Laravel + mot de passe MySQL → `charts/sample-app/values.sealed.yaml` ;
+- **Grafana / Dex** : identifiants admin Grafana, hash bcrypt + client secrets OAuth → `infra/monitoring/`, `infra/dex/` ;
+- **Headlamp** : configuration OIDC → `infra/headlamp/headlamp-oidc-sealedsecret.yaml`.
+
+Procédure de scellement détaillée : [docs/sealed-secrets.md](docs/sealed-secrets.md) (et [docs/dex.md](docs/dex.md) pour les secrets SSO). Les fichiers `SealedSecret` produits sont chiffrés et **sûrs à committer**.
+
 ### Étape 6 — Déployer l'application
 
-Le pull de l'image se fait depuis **GHCR** : un `imagePullSecret` est créé à partir d'un token
-GitHub (scope `read:packages`). À fournir **une seule fois** (le secret persiste ensuite) :
+Le pull de l'image se fait depuis **GHCR** : un `imagePullSecret` est créé à partir d'un token GitHub (scope `read:packages`). À fournir **une seule fois** (le secret persiste ensuite) :
 
 ```bash
 export GITHUB_USER="<github-username>"
 export GITHUB_TOKEN="<github-token>"   # scope read:packages
 
-cd ansible
 ansible-playbook -i ansible/inventory.yml ansible/deploy_app.yml
 ```
 
-Le playbook : crée le namespace `sample-app`, crée le secret registry GHCR, déploie le chart Helm
-(`helm upgrade --install`), attend le déchiffrement du SealedSecret, puis le rollout du Deployment.
+Le playbook : crée le namespace `sample-app`, crée le secret registry GHCR, déploie le chart Helm (`helm upgrade --install`), attend le déchiffrement du SealedSecret, puis le rollout du Deployment.
 
 > Déploiement manuel équivalent et options du chart : [docs/helm.md](docs/helm.md).

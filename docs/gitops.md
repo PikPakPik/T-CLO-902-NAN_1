@@ -19,9 +19,9 @@ flowchart LR
 3. La CI met à jour `gitops/sample-app/values.yaml` (annotation `git-sha` → force le rollout)
 4. Le push GitOps déclenche `deploy-sample-app.yml`
 5. Ansible exécute `helm upgrade` avec :
-   - `charts/sample-app/values.sealed.yaml` — secrets chiffrés
-   - `gitops/sample-app/values.yaml` — tag image, réplicas, etc.
-   - registry GHCR — généré depuis `GITHUB_TOKEN` en CI
+   - `charts/sample-app/values.sealed.yaml` secrets chiffrés
+   - `gitops/sample-app/values.yaml` tag image, réplicas, etc.
+   - registry GHCR généré depuis `GITHUB_TOKEN` en CI
 
 ## Fichiers clés
 
@@ -52,24 +52,24 @@ ansible-playbook -i ansible/inventory.yml ansible/deploy_app.yml
 
 ```yaml
 image:
-  tag: latest
-  pullPolicy: Always
+  tag: "ef1499512d04"      # SHA12 du commit (réécrit par la CI à chaque build)
+  pullPolicy: IfNotPresent
 
 replicaCount: 2
 
 podAnnotations:
-  kubequest.io/git-sha: "abc123"
+  kubequest.io/git-sha: "ef1499512d04"
 ```
 
-La CI met à jour `podAnnotations.kubequest.io/git-sha` à chaque build pour forcer Kubernetes à redéployer les pods même avec `tag: latest`.
+La CI réécrit `image.tag` (SHA12 du commit) **et** `podAnnotations.kubequest.io/git-sha` à chaque build : le changement de tag suffit à redéployer les pods, et l'annotation `git-sha` apporte une robustesse supplémentaire.
 
 ## Prérequis CI
 
 L'environnement GitHub `deployment` doit contenir :
-- `EC2_SSH_KEY` — clé SSH pour accéder au master Kubernetes
+- `EC2_SSH_KEY` clé SSH pour accéder au master Kubernetes
 
 Le `GITHUB_TOKEN` du workflow fournit l'accès au pull GHCR.
 
 ## Évolution future
 
-Quand ArgoCD sera ajouté, `gitops/sample-app/values.yaml` restera la source de vérité — seul le mécanisme de sync changera (ArgoCD watch Git au lieu de la CI qui lance Ansible).
+Quand ArgoCD sera ajouté, `gitops/sample-app/values.yaml` restera la source de vérité seul le mécanisme de sync changera (ArgoCD watch Git au lieu de la CI qui lance Ansible).

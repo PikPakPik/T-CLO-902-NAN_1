@@ -67,3 +67,7 @@ Protocole populaire chez les opérateurs de télécommunication dans l'objectif 
 Pour la réalisation du projet T-CLO-902, nous avons choisi Calico pour se rapprocher d'un environnement d'entreprise à grande échelle.
 Celui-ci s'installe sur le maitre mais également sur les membres du cluster Kubernetes, afin de facilité l'administration du réseau de chaque Pod mais aussi la communication entre chaque membre du cluster Kubernetes.
 De plus, celui-ci nous permet d'appliquer une politique réseau sticte dans l'objectif de limiter les problèmes d'accès non privilégier.
+
+> Version déployée : **Calico v3.31.4** (variable `calico_version` dans
+> [`ansible/roles/k8s_master/defaults/main.yml`](../ansible/roles/k8s_master/defaults/main.yml)),
+> installée via le manifeste officiel sur tous les noeuds du cluster.

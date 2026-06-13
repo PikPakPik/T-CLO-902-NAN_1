@@ -103,7 +103,7 @@ kubectl get pods -A -o wide
 echo "export KUBECONFIG=/etc/kubernetes/admin.conf" >> /root/.bashrc
 source /root/.bashrc
 ```
-- ``echo "export KUBECONFIG=/etc/kubernetes/admin.conf" >> /root/.bashrc`` : Contient les certificats et identifiants de l’administrateur du cluster. En l’exportant, ``kubectl`` utilise automatiquement les credentials admin pour communiquer avec l’API server et on évite l’erreur ``dial 127.0.0.1:8080: connection refused`` causée par l’absence de configuration.
+- ``echo "export KUBECONFIG=/etc/kubernetes/admin.conf" >> /root/.bashrc`` : Contient les certificats et identifiants de l'administrateur du cluster. En l'exportant, ``kubectl`` utilise automatiquement les credentials admin pour communiquer avec l'API server et on évite l'erreur ``dial 127.0.0.1:8080: connection refused`` causée par l'absence de configuration.
 - ``source /root/.bashrc``: Permet de recharger la configuration shell dans la session en cours, évitant la reconnexion de l'utilisateur pour appliquer la configuration.
 
 > Le fichier ``admin.conf`` donne des privilèges élevés, il est donc important de limiter la diffusion de celui-ci.
@@ -113,7 +113,7 @@ source /root/.bashrc
 echo "export KUBECONFIG=/etc/kubernetes/kubelet.conf" >> /root/.bashrc
 source /root/.bashrc
 ```
-- ``echo "export KUBECONFIG=/etc/kubernetes/kubelet.conf" >> /root/.bashrc`` : Fichier utilisé par le ``kubelet`` contenant des credentials liés au noeud. En l’exportant, on peut utiliser ``kubectl`` localement pour diagnostiquer les ressources du noeud (pods locaux, logs, etc.) sans exposer les credentials admin.
+- ``echo "export KUBECONFIG=/etc/kubernetes/kubelet.conf" >> /root/.bashrc`` : Fichier utilisé par le ``kubelet`` contenant des credentials liés au noeud. En l'exportant, on peut utiliser ``kubectl`` localement pour diagnostiquer les ressources du noeud (pods locaux, logs, etc.) sans exposer les credentials admin.
 - ``source /root/.bashrc``: Permet de recharger la configuration shell dans la session en cours, évitant la reconnexion de l'utilisateur pour appliquer la configuration.
 
 > Le fichier ``kubelet.conf`` donne des privilèges limitées, pour toutes manipulations d'un noeud ou pod il est vivement recommander de passer par le Maître.
