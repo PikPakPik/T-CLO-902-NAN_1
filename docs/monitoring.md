@@ -129,6 +129,45 @@ comptes locaux Dex — le mapping de rôle se fait par email (admin → `Admin`,
 Le formulaire admin natif ci-dessus reste actif comme accès de secours. Détails et mise en
 place : [docs/dex.md](dex.md).
 
+## Alertes de démo & tests de charge
+
+Le chart déploie le jeu de règles **kube-prometheus-stack par défaut** (`KubePodCrashLooping`,
+`KubeNodeNotReady`, etc.), mais celles-ci se déclenchent à `for: ~15m` — trop lent pour une démo
+live. Le manifest [`infra/monitoring/prometheusrule-demo.yaml`](../infra/monitoring/prometheusrule-demo.yaml)
+ajoute des versions **accélérées (`for: 1m`)** dédiées aux démos :
+
+| Alerte | Démo | Condition |
+| ------ | ---- | --------- |
+| `DemoPodCrashLooping` | rollback | un conteneur de `sample-app` redémarre en boucle |
+| `DemoAppHighCpu` | autoscaling | CPU pod > 80% du request (`100m`) |
+| `DemoAppHighMemory` | autoscaling | mémoire pod > 80% du request (`128Mi`) |
+| `DemoNodeNotReady` | node | un nœud n'est plus `Ready` |
+
+> ⚠️ Toute `PrometheusRule` custom **doit** porter le label `release: kube-prometheus`
+> (`ruleSelectorNilUsesHelmValues=true`), sinon Prometheus l'ignore silencieusement.
+
+### Stresser la sample-app (alertes CPU / mémoire)
+
+Les alertes `DemoAppHighCpu` / `DemoAppHighMemory` sont scopées sur `container="sample-app"` :
+il faut donc charger **ce conteneur** (pas un pod tiers). Les deux commandes s'arrêtent seules
+au bout de 4 min (`timeout 240`) ; pour couper avant, `Ctrl-C` ou
+`kubectl -n sample-app rollout restart deploy/app-sample-app`.
+
+```bash
+# CPU : une boucle shell sature le quota CPU (throttlé à la limite 500m → ratio 5x le request)
+kubectl -n sample-app exec deploy/app-sample-app -c sample-app -- timeout 240 sh -c 'while :; do :; done'
+
+# Mémoire : alloue ~150 Mo (> 80% du request 128Mi, < limite 512Mi donc pas d'OOMKill)
+kubectl -n sample-app exec deploy/app-sample-app -c sample-app -- timeout 240 php -d memory_limit=-1 -r '$a = str_repeat("x", 150*1024*1024); sleep(600);'
+```
+
+Compter **~1 à 3 min** (fenêtre `rate[2m]` + `for: 1m`) avant le passage en `firing`. Visualiser
+l'état dans Prometheus (`/alerts`) ou dans **Grafana → Alerting** (via la data source Alertmanager).
+
+> Pour déclencher l'alerte CPU **et** le HPA (démo autoscaling « bout en bout »), préférer une
+> charge HTTP sur le service plutôt qu'un burn local — p. ex. un pod jetable :
+> `kubectl -n sample-app run loadgen --rm -it --restart=Never --image=williamyeh/hey -- -z 5m -c 50 http://app-sample-app.sample-app/`
+
 ## Segmentation réseau (NetworkPolicy)
 
 Par défaut, **tout pod du cluster** peut joindre Prometheus, Alertmanager ou kube-state-metrics

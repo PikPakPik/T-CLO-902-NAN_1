@@ -1,0 +1,75 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: demo-alerts
+  namespace: monitoring
+  labels:
+    release: kube-prometheus
+    app.kubernetes.io/part-of: kubequest
+spec:
+  groups:
+    # --- Démo rollback : un pod qui crashloop doit alerter vite ---
+    - name: demo.rollback
+      rules:
+        - alert: DemoPodCrashLooping
+          expr: |
+            max_over_time(
+              kube_pod_container_status_waiting_reason{reason="CrashLoopBackOff", job="kube-state-metrics", namespace="sample-app"}[5m]
+            ) >= 1
+          for: 1m
+          labels:
+            severity: critical
+            demo: rollback
+          annotations:
+            summary: "Pod {{ $labels.pod }} en CrashLoopBackOff (ns sample-app)"
+            description: "Le conteneur {{ $labels.container }} du pod {{ $labels.pod }} redémarre en boucle depuis >1m. Déclencher le rollback."
+
+    # --- Démo autoscaling : conso CPU/mémoire élevée sur l'app ---
+    - name: demo.autoscaling
+      rules:
+        - alert: DemoAppHighCpu
+          expr: |
+            sum by (pod, namespace) (
+              rate(container_cpu_usage_seconds_total{namespace="sample-app", container="sample-app"}[2m])
+            )
+            /
+            sum by (pod, namespace) (
+              kube_pod_container_resource_requests{namespace="sample-app", container="sample-app", resource="cpu"}
+            ) > 0.8
+          for: 1m
+          labels:
+            severity: warning
+            demo: autoscaling
+          annotations:
+            summary: "CPU élevé sur {{ $labels.pod }} (> 80% du request)"
+            description: "Le pod {{ $labels.pod }} consomme >80% de son request CPU (100m). Le HPA (cible 70%) devrait scaler vers le haut (max 5)."
+        - alert: DemoAppHighMemory
+          expr: |
+            sum by (pod, namespace) (
+              container_memory_working_set_bytes{namespace="sample-app", container="sample-app"}
+            )
+            /
+            sum by (pod, namespace) (
+              kube_pod_container_resource_requests{namespace="sample-app", container="sample-app", resource="memory"}
+            ) > 0.8
+          for: 1m
+          labels:
+            severity: warning
+            demo: autoscaling
+          annotations:
+            summary: "Mémoire élevée sur {{ $labels.pod }} (> 80% du request)"
+            description: "Le pod {{ $labels.pod }} consomme >80% de son request mémoire (128Mi)."
+
+    # --- Démo node : un noeud NotReady doit alerter vite ---
+    - name: demo.node
+      rules:
+        - alert: DemoNodeNotReady
+          expr: |
+            kube_node_status_condition{job="kube-state-metrics", condition="Ready", status="true"} == 0
+          for: 1m
+          labels:
+            severity: critical
+            demo: node
+          annotations:
+            summary: "Noeud {{ $labels.node }} NotReady"
+            description: "Le noeud {{ $labels.node }} n'est pas Ready depuis >1m."

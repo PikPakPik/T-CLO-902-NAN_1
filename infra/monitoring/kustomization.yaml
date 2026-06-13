@@ -6,3 +6,6 @@ resources:
   - grafana-oauth-sealedsecret.yaml
   - httproute.yaml
   - networkpolicy.yaml
+  - prometheusrule-demo.yaml
+  - grafana-dashboard-sample-app.yaml
+  - grafana-dashboard-cluster.yaml

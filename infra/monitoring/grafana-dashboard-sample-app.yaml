@@ -1,0 +1,179 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-sample-app
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+    app.kubernetes.io/part-of: kubequest
+data:
+  sample-app-demo.json: |
+    {
+      "uid": "sample-app-demo",
+      "title": "Sample-app — Démo (CPU / Mémoire / HPA)",
+      "tags": ["kubequest", "sample-app", "demo"],
+      "timezone": "browser",
+      "schemaVersion": 39,
+      "version": 1,
+      "refresh": "10s",
+      "time": { "from": "now-30m", "to": "now" },
+      "templating": {
+        "list": [
+          {
+            "type": "datasource",
+            "name": "datasource",
+            "label": "Datasource",
+            "query": "prometheus",
+            "current": {},
+            "hide": 0,
+            "refresh": 1,
+            "includeAll": false,
+            "multi": false
+          }
+        ]
+      },
+      "panels": [
+        {
+          "id": 1,
+          "type": "timeseries",
+          "title": "Réplicas HPA (actuel / désiré / min / max)",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "min": 0,
+              "custom": { "drawStyle": "line", "lineInterpolation": "stepAfter", "fillOpacity": 10, "showPoints": "auto" }
+            },
+            "overrides": []
+          },
+          "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["last"] }, "tooltip": { "mode": "multi" } },
+          "targets": [
+            { "refId": "A", "datasource": { "type": "prometheus", "uid": "${datasource}" }, "expr": "kube_horizontalpodautoscaler_status_current_replicas{namespace='sample-app'}", "legendFormat": "actuel" },
+            { "refId": "B", "datasource": { "type": "prometheus", "uid": "${datasource}" }, "expr": "kube_horizontalpodautoscaler_status_desired_replicas{namespace='sample-app'}", "legendFormat": "désiré" },
+            { "refId": "C", "datasource": { "type": "prometheus", "uid": "${datasource}" }, "expr": "kube_horizontalpodautoscaler_spec_min_replicas{namespace='sample-app'}", "legendFormat": "min" },
+            { "refId": "D", "datasource": { "type": "prometheus", "uid": "${datasource}" }, "expr": "kube_horizontalpodautoscaler_spec_max_replicas{namespace='sample-app'}", "legendFormat": "max" }
+          ]
+        },
+        {
+          "id": 2,
+          "type": "timeseries",
+          "title": "CPU par pod — % du request (seuils HPA 70% / alerte 80%)",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "min": 0,
+              "custom": { "drawStyle": "line", "fillOpacity": 10, "showPoints": "never", "thresholdsStyle": { "mode": "line" } },
+              "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 0.7 }, { "color": "red", "value": 0.8 } ] }
+            },
+            "overrides": []
+          },
+          "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["last", "max"] }, "tooltip": { "mode": "multi" } },
+          "targets": [
+            { "refId": "A", "datasource": { "type": "prometheus", "uid": "${datasource}" }, "expr": "sum by (pod) (rate(container_cpu_usage_seconds_total{namespace='sample-app', container='sample-app'}[2m])) / sum by (pod) (kube_pod_container_resource_requests{namespace='sample-app', container='sample-app', resource='cpu'})", "legendFormat": "{{pod}}" }
+          ]
+        },
+        {
+          "id": 3,
+          "type": "timeseries",
+          "title": "CPU par pod — cores (usage vs request vs limit)",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "min": 0,
+              "custom": { "drawStyle": "line", "fillOpacity": 10, "showPoints": "never" }
+            },
+            "overrides": [
+              { "matcher": { "id": "byRegexp", "options": "/request|limit/" }, "properties": [ { "id": "custom.lineStyle", "value": { "dash": [ 8, 4 ], "fill": "dash" } } ] }
+            ]
+          },
+          "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["last", "max"] }, "tooltip": { "mode": "multi" } },
+          "targets": [
+            { "refId": "A", "datasource": { "type": "prometheus", "uid": "${datasource}" }, "expr": "sum by (pod) (rate(container_cpu_usage_seconds_total{namespace='sample-app', container='sample-app'}[2m]))", "legendFormat": "{{pod}}" },
+            { "refId": "B", "datasource": { "type": "prometheus", "uid": "${datasource}" }, "expr": "max(kube_pod_container_resource_requests{namespace='sample-app', container='sample-app', resource='cpu'})", "legendFormat": "request" },
+            { "refId": "C", "datasource": { "type": "prometheus", "uid": "${datasource}" }, "expr": "max(kube_pod_container_resource_limits{namespace='sample-app', container='sample-app', resource='cpu'})", "legendFormat": "limit" }
+          ]
+        },
+        {
+          "id": 4,
+          "type": "timeseries",
+          "title": "Mémoire par pod — % du request (seuil alerte 80%)",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "min": 0,
+              "custom": { "drawStyle": "line", "fillOpacity": 10, "showPoints": "never", "thresholdsStyle": { "mode": "line" } },
+              "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 0.8 } ] }
+            },
+            "overrides": []
+          },
+          "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["last", "max"] }, "tooltip": { "mode": "multi" } },
+          "targets": [
+            { "refId": "A", "datasource": { "type": "prometheus", "uid": "${datasource}" }, "expr": "sum by (pod) (container_memory_working_set_bytes{namespace='sample-app', container='sample-app'}) / sum by (pod) (kube_pod_container_resource_requests{namespace='sample-app', container='sample-app', resource='memory'})", "legendFormat": "{{pod}}" }
+          ]
+        },
+        {
+          "id": 5,
+          "type": "timeseries",
+          "title": "Mémoire par pod — octets (usage vs request vs limit)",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes",
+              "min": 0,
+              "custom": { "drawStyle": "line", "fillOpacity": 10, "showPoints": "never" }
+            },
+            "overrides": [
+              { "matcher": { "id": "byRegexp", "options": "/request|limit/" }, "properties": [ { "id": "custom.lineStyle", "value": { "dash": [ 8, 4 ], "fill": "dash" } } ] }
+            ]
+          },
+          "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["last", "max"] }, "tooltip": { "mode": "multi" } },
+          "targets": [
+            { "refId": "A", "datasource": { "type": "prometheus", "uid": "${datasource}" }, "expr": "sum by (pod) (container_memory_working_set_bytes{namespace='sample-app', container='sample-app'})", "legendFormat": "{{pod}}" },
+            { "refId": "B", "datasource": { "type": "prometheus", "uid": "${datasource}" }, "expr": "max(kube_pod_container_resource_requests{namespace='sample-app', container='sample-app', resource='memory'})", "legendFormat": "request" },
+            { "refId": "C", "datasource": { "type": "prometheus", "uid": "${datasource}" }, "expr": "max(kube_pod_container_resource_limits{namespace='sample-app', container='sample-app', resource='memory'})", "legendFormat": "limit" }
+          ]
+        },
+        {
+          "id": 6,
+          "type": "timeseries",
+          "title": "Redémarrages conteneur (5m) — indicateur crashloop",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "min": 0,
+              "custom": { "drawStyle": "bars", "fillOpacity": 60, "showPoints": "never" }
+            },
+            "overrides": []
+          },
+          "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["sum"] }, "tooltip": { "mode": "multi" } },
+          "targets": [
+            { "refId": "A", "datasource": { "type": "prometheus", "uid": "${datasource}" }, "expr": "sum by (pod) (increase(kube_pod_container_status_restarts_total{namespace='sample-app'}[5m]))", "legendFormat": "{{pod}}" }
+          ]
+        },
+        {
+          "id": 7,
+          "type": "table",
+          "title": "Alertes démo actives (firing)",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 24 },
+          "options": { "showHeader": true },
+          "fieldConfig": { "defaults": {}, "overrides": [] },
+          "targets": [
+            { "refId": "A", "datasource": { "type": "prometheus", "uid": "${datasource}" }, "expr": "ALERTS{alertname=~'Demo.*', alertstate='firing'}", "format": "table", "instant": true }
+          ],
+          "transformations": [
+            { "id": "organize", "options": { "excludeByName": { "Time": true, "Value": true, "__name__": true, "endpoint": true, "instance": true, "job": true, "service": true, "container": true, "prometheus": true }, "renameByName": { "alertname": "Alerte", "alertstate": "État", "severity": "Sévérité", "demo": "Démo", "pod": "Pod", "namespace": "Namespace", "node": "Nœud" } } }
+          ]
+        }
+      ]
+    }

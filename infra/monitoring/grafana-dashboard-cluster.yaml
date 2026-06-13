@@ -1,0 +1,202 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-cluster
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+    app.kubernetes.io/part-of: kubequest
+data:
+  cluster-overview.json: |
+    {
+      "uid": "cluster-overview",
+      "title": "Cluster — Vue d'ensemble (nœuds / namespaces / pods)",
+      "tags": ["kubequest", "cluster", "overview"],
+      "timezone": "browser",
+      "schemaVersion": 39,
+      "version": 1,
+      "refresh": "30s",
+      "time": { "from": "now-1h", "to": "now" },
+      "templating": {
+        "list": [
+          {
+            "type": "datasource",
+            "name": "datasource",
+            "label": "Datasource",
+            "query": "prometheus",
+            "current": {},
+            "hide": 0,
+            "refresh": 1,
+            "includeAll": false,
+            "multi": false
+          },
+          {
+            "type": "query",
+            "name": "node",
+            "label": "Nœud",
+            "datasource": { "type": "prometheus", "uid": "${datasource}" },
+            "definition": "label_values(node_namespace_pod_container:container_cpu_usage_seconds_total:sum_irate, node)",
+            "query": { "qryType": 1, "query": "label_values(node_namespace_pod_container:container_cpu_usage_seconds_total:sum_irate, node)", "refId": "StandardVariableQuery" },
+            "refresh": 2,
+            "sort": 1,
+            "includeAll": true,
+            "multi": true,
+            "allValue": ".*",
+            "current": { "selected": true, "text": ["All"], "value": ["$__all"] }
+          },
+          {
+            "type": "query",
+            "name": "namespace",
+            "label": "Namespace",
+            "datasource": { "type": "prometheus", "uid": "${datasource}" },
+            "definition": "label_values(kube_pod_info{node=~'${node:regex}'}, namespace)",
+            "query": { "qryType": 1, "query": "label_values(kube_pod_info{node=~'${node:regex}'}, namespace)", "refId": "StandardVariableQuery" },
+            "refresh": 2,
+            "sort": 1,
+            "includeAll": true,
+            "multi": true,
+            "allValue": ".*",
+            "current": { "selected": true, "text": ["All"], "value": ["$__all"] }
+          },
+          {
+            "type": "query",
+            "name": "pod",
+            "label": "Pod",
+            "datasource": { "type": "prometheus", "uid": "${datasource}" },
+            "definition": "label_values(kube_pod_info{node=~'${node:regex}', namespace=~'${namespace:regex}'}, pod)",
+            "query": { "qryType": 1, "query": "label_values(kube_pod_info{node=~'${node:regex}', namespace=~'${namespace:regex}'}, pod)", "refId": "StandardVariableQuery" },
+            "refresh": 2,
+            "sort": 1,
+            "includeAll": true,
+            "multi": true,
+            "allValue": ".*",
+            "current": { "selected": true, "text": ["All"], "value": ["$__all"] }
+          }
+        ]
+      },
+      "panels": [
+        {
+          "id": 1,
+          "type": "stat",
+          "title": "Nœuds Ready",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+          "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null } ] } }, "overrides": [] },
+          "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "colorMode": "value", "graphMode": "none", "textMode": "auto" },
+          "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "${datasource}" }, "expr": "sum(kube_node_status_condition{condition='Ready', status='true'})" } ]
+        },
+        {
+          "id": 2,
+          "type": "stat",
+          "title": "Pods Running",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+          "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null } ] } }, "overrides": [] },
+          "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "colorMode": "value", "graphMode": "area", "textMode": "auto" },
+          "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "${datasource}" }, "expr": "sum(kube_pod_status_phase{phase='Running', namespace=~'${namespace:regex}'})" } ]
+        },
+        {
+          "id": 3,
+          "type": "stat",
+          "title": "Pods Pending / Failed / Unknown",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+          "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 1 } ] } }, "overrides": [] },
+          "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "colorMode": "value", "graphMode": "none", "textMode": "auto" },
+          "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "${datasource}" }, "expr": "sum(kube_pod_status_phase{phase=~'Pending|Failed|Unknown', namespace=~'${namespace:regex}'})" } ]
+        },
+        {
+          "id": 4,
+          "type": "stat",
+          "title": "Redémarrages conteneurs (1h)",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+          "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 1 }, { "color": "red", "value": 5 } ] } }, "overrides": [] },
+          "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "colorMode": "value", "graphMode": "area", "textMode": "auto" },
+          "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "${datasource}" }, "expr": "sum(increase(kube_pod_container_status_restarts_total{namespace=~'${namespace:regex}'}[1h]))" } ]
+        },
+        {
+          "id": 5,
+          "type": "timeseries",
+          "title": "CPU par nœud (cores)",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+          "fieldConfig": { "defaults": { "unit": "short", "min": 0, "custom": { "drawStyle": "line", "fillOpacity": 20, "showPoints": "never", "stacking": { "mode": "normal" } } }, "overrides": [] },
+          "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["last", "max"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
+          "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "${datasource}" }, "expr": "sum by (node) (node_namespace_pod_container:container_cpu_usage_seconds_total:sum_irate{node=~'${node:regex}', namespace=~'${namespace:regex}', pod=~'${pod:regex}'})", "legendFormat": "{{node}}" } ]
+        },
+        {
+          "id": 6,
+          "type": "timeseries",
+          "title": "Top 15 pods — CPU (cores)",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+          "fieldConfig": { "defaults": { "unit": "short", "min": 0, "custom": { "drawStyle": "line", "fillOpacity": 10, "showPoints": "never" } }, "overrides": [] },
+          "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["last", "max"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
+          "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "${datasource}" }, "expr": "topk(15, sum by (namespace, pod) (node_namespace_pod_container:container_cpu_usage_seconds_total:sum_irate{node=~'${node:regex}', namespace=~'${namespace:regex}', pod=~'${pod:regex}'}))", "legendFormat": "{{namespace}}/{{pod}}" } ]
+        },
+        {
+          "id": 7,
+          "type": "timeseries",
+          "title": "Mémoire par nœud (working set)",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+          "fieldConfig": { "defaults": { "unit": "bytes", "min": 0, "custom": { "drawStyle": "line", "fillOpacity": 20, "showPoints": "never", "stacking": { "mode": "normal" } } }, "overrides": [] },
+          "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["last", "max"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
+          "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "${datasource}" }, "expr": "sum by (node) (node_namespace_pod_container:container_memory_working_set_bytes{node=~'${node:regex}', namespace=~'${namespace:regex}', pod=~'${pod:regex}'})", "legendFormat": "{{node}}" } ]
+        },
+        {
+          "id": 8,
+          "type": "timeseries",
+          "title": "Top 15 pods — Mémoire (working set)",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+          "fieldConfig": { "defaults": { "unit": "bytes", "min": 0, "custom": { "drawStyle": "line", "fillOpacity": 10, "showPoints": "never" } }, "overrides": [] },
+          "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["last", "max"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
+          "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "${datasource}" }, "expr": "topk(15, sum by (namespace, pod) (node_namespace_pod_container:container_memory_working_set_bytes{node=~'${node:regex}', namespace=~'${namespace:regex}', pod=~'${pod:regex}'}))", "legendFormat": "{{namespace}}/{{pod}}" } ]
+        },
+        {
+          "id": 9,
+          "type": "timeseries",
+          "title": "Réseau reçu — top 10 pods (B/s)",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+          "fieldConfig": { "defaults": { "unit": "Bps", "min": 0, "custom": { "drawStyle": "line", "fillOpacity": 10, "showPoints": "never" } }, "overrides": [] },
+          "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["last", "max"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
+          "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "${datasource}" }, "expr": "topk(10, sum by (namespace, pod) (rate(container_network_receive_bytes_total{namespace=~'${namespace:regex}', pod=~'${pod:regex}'}[5m])))", "legendFormat": "{{namespace}}/{{pod}}" } ]
+        },
+        {
+          "id": 10,
+          "type": "timeseries",
+          "title": "Réseau émis — top 10 pods (B/s)",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+          "fieldConfig": { "defaults": { "unit": "Bps", "min": 0, "custom": { "drawStyle": "line", "fillOpacity": 10, "showPoints": "never" } }, "overrides": [] },
+          "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["last", "max"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
+          "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "${datasource}" }, "expr": "topk(10, sum by (namespace, pod) (rate(container_network_transmit_bytes_total{namespace=~'${namespace:regex}', pod=~'${pod:regex}'}[5m])))", "legendFormat": "{{namespace}}/{{pod}}" } ]
+        },
+        {
+          "id": 11,
+          "type": "timeseries",
+          "title": "Redémarrages par pod (1h)",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 28 },
+          "fieldConfig": { "defaults": { "unit": "short", "min": 0, "custom": { "drawStyle": "bars", "fillOpacity": 60, "showPoints": "never" } }, "overrides": [] },
+          "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["sum"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
+          "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "${datasource}" }, "expr": "sum by (namespace, pod) (increase(kube_pod_container_status_restarts_total{namespace=~'${namespace:regex}', pod=~'${pod:regex}'}[1h])) > 0", "legendFormat": "{{namespace}}/{{pod}}" } ]
+        },
+        {
+          "id": 12,
+          "type": "table",
+          "title": "Pods non-Running (Pending / Failed / Unknown)",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 28 },
+          "options": { "showHeader": true },
+          "fieldConfig": { "defaults": {}, "overrides": [] },
+          "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "${datasource}" }, "expr": "kube_pod_status_phase{namespace=~'${namespace:regex}', phase=~'Pending|Failed|Unknown'} == 1", "format": "table", "instant": true } ],
+          "transformations": [
+            { "id": "organize", "options": { "excludeByName": { "Time": true, "Value": true, "__name__": true, "instance": true, "job": true, "service": true, "endpoint": true, "container": true, "uid": true, "prometheus": true }, "renameByName": { "namespace": "Namespace", "pod": "Pod", "phase": "Phase" } } }
+          ]
+        }
+      ]
+    }
