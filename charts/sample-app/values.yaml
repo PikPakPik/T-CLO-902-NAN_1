@@ -29,6 +29,7 @@ service:
 autoscaling:
   enabled: true
   targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
   minReplicas: 2
   maxReplicas: 5
 
