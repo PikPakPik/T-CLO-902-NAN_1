@@ -5,6 +5,31 @@ configs:
   params:
     server.insecure: true
 
+
+  cm:
+    url: https://argocd.15-237-15-14.nip.io
+    
+    oidc.config: |
+      name: Dex
+      issuer: https://dex.15-237-15-14.nip.io
+      clientID: argocd
+      clientSecret: $argocd-oidc:clientSecret
+      requestedScopes:
+        - openid
+        - profile
+        - email
+        - groups
+
+  
+  rbac:
+    policy.default: role:readonly
+    scopes: "[email, groups]"
+    policy.csv: |
+      g, admin@kubequest.local, role:admin
+
+dex:
+  enabled: false
+
 # Ressources recommandées pour un environnement de test
 controller:
   resources:

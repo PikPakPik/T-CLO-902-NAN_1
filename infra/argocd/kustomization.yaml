@@ -4,3 +4,4 @@ resources:
   - httproute.yaml
   - app-argocd-sample-app.yaml
   - values.sealed.yaml
+  - argocd-oidc-sealedsecret.yaml

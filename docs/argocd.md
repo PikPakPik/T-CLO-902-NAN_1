@@ -8,11 +8,12 @@
 4. [Structure des fichiers](#structure-des-fichiers)
 5. [Workflow de déploiement](#workflow-de-déploiement)
 6. [Gestion des secrets avec SealedSecrets](#gestion-des-secrets-avec-sealedsecrets)
-7. [Configuration des Applications](#configuration-des-applications)
-8. [Patterns et bonnes pratiques](#patterns-et-bonnes-pratiques)
-9. [Dépannage](#dépannage)
-10. [Commandes utiles](#commandes-utiles)
-11. [Flux CI/CD](#flux-cicd)
+7. [Authentification OIDC via Dex (SSO)](#authentification-oidc-via-dex-sso)
+8. [Configuration des Applications](#configuration-des-applications)
+9. [Patterns et bonnes pratiques](#patterns-et-bonnes-pratiques)
+10. [Dépannage](#dépannage)
+11. [Commandes utiles](#commandes-utiles)
+12. [Flux CI/CD](#flux-cicd)
 
 ---
 
@@ -92,19 +93,17 @@ T-CLO-902-NAN_1/
 │   ├── deploy_all.yml              # Orchestration complète
 │   ├── deploy_argocd.yml           # Déploiement ArgoCD
 │   └── roles/argocd/
-│       ├── tasks/
-│       │   ├── install.yml         # Installation Helm ArgoCD
-│       │   └── deploy.yml          # Application des manifests
-│       └── templates/
-│           └── values.yaml.j2      # Template Helm ArgoCD
+│       ├── defaults/main.yml       # Repo/version du chart, namespace, release
+│       └── tasks/
+│           ├── install.yml         # Installation Helm ArgoCD (-f infra/argocd/values.yaml)
+│           └── deploy.yml          # Application des manifests (kubectl apply -k)
 ├── infra/argocd/
-│   ├── values.yaml                 # Configuration Helm ArgoCD
+│   ├── values.yaml                 # Configuration Helm ArgoCD (dont SSO OIDC + RBAC)
 │   ├── values.sealed.yaml          # SealedSecret repo GitHub
 │   ├── kustomization.yaml          # Kustomize pour les manifests
 │   ├── app-argocd-sample-app.yaml  # Application sample-app
-│   ├── httproute.yaml             # HTTPRoute pour ArgoCD UI
-│   ├── argocd-dex-oidc-sealedsecret.yaml
-│   └── argocd-admin-password-sealedsecret.yaml
+│   ├── httproute.yaml              # HTTPRoute pour ArgoCD UI
+│   └── argocd-oidc-sealedsecret.yaml  # SealedSecret client OIDC Dex (clientSecret)
 ├── charts/sample-app/
 │   ├── Chart.yaml
 │   ├── values.yaml                 # Valeurs par défaut du chart
@@ -386,6 +385,192 @@ Copier le résultat dans `charts/sample-app/values.sealed.yaml`.
 3. Re-sceller avec le **même nom** (`--name app-sample-app-app-secrets`)
 4. Mettre à jour `values.sealed.yaml`
 5. Commit/push → ArgoCD sync
+
+---
+
+## Authentification OIDC via Dex (SSO)
+
+ArgoCD se connecte au **Dex partagé du cluster** (namespace `dex`), le **même** que
+Grafana et Headlamp. On n'utilise donc **pas** le Dex *embarqué* d'ArgoCD : on le
+désactive (`dex.enabled: false`) et on configure directement `oidc.config`.
+
+### Vue d'ensemble
+
+```mermaid
+flowchart LR
+    user[Utilisateur] -->|1. Log in via Dex| argocd[ArgoCD server]
+    argocd -->|2. redirige| dex[Dex IDP\nns dex]
+    user -->|3. identifiants locaux / Entra| dex
+    dex -->|4. code OAuth| argocd
+    argocd -->|5. token / userinfo| dex
+    sealed[SealedSecret argocd-oidc\nclientSecret] -->|$argocd-oidc:clientSecret| argocd
+```
+
+### Ce qui est déjà en place côté Dex
+
+Le client OAuth `argocd` **existe déjà** dans `infra/dex/values.yaml`
+(`config.staticClients`) et son secret `ARGOCD_CLIENT_SECRET` est déjà scellé dans
+`dex-secrets` (`infra/dex/dex-sealedsecret.yaml`) :
+
+```yaml
+staticClients:
+  - id: "argocd"
+    name: ArgoCD
+    secretEnv: ARGOCD_CLIENT_SECRET
+    redirectURIs:
+      - "https://argocd.15-237-15-14.nip.io/auth/callback"
+```
+
+→ Aucune modification de Dex n'est nécessaire. Il faut seulement câbler **le côté
+ArgoCD**.
+
+### Configuration côté ArgoCD (`infra/argocd/values.yaml`)
+
+```yaml
+configs:
+  params:
+    server.insecure: true            # TLS terminé par Traefik
+  cm:
+    url: https://argocd.15-237-15-14.nip.io   # construit le redirect_uri OIDC
+    oidc.config: |
+      name: Dex
+      issuer: https://dex.15-237-15-14.nip.io
+      clientID: argocd
+      clientSecret: $argocd-oidc:clientSecret  # lu depuis le SealedSecret argocd-oidc
+      requestedScopes:
+        - openid
+        - profile
+        - email
+        - groups
+  rbac:
+    policy.default: role:readonly
+    scopes: "[email, groups]"
+    policy.csv: |
+      g, admin@kubequest.local, role:admin
+
+dex:
+  enabled: false                     # on utilise le Dex partagé, pas celui d'ArgoCD
+```
+
+Points importants :
+
+- **`url`** doit être l'URL publique exacte d'ArgoCD : ArgoCD en dérive le
+  `redirect_uri` (`<url>/auth/callback`), qui doit correspondre **au caractère près**
+  au `redirectURIs` du client `argocd` dans Dex.
+- **`issuer`** doit être **strictement identique** à l'émetteur Dex
+  (`config.issuer` dans `infra/dex/values.yaml`). ArgoCD découvre les endpoints via
+  `<issuer>/.well-known/openid-configuration`.
+- **`clientSecret: $argocd-oidc:clientSecret`** : la syntaxe `$<secret>:<clé>`
+  fait lire la valeur dans le Secret `argocd-oidc`. ArgoCD n'autorise cette
+  référence externe que si le Secret porte le label
+  `app.kubernetes.io/part-of: argocd` (voir le SealedSecret ci-dessous).
+
+### Sceller le client secret ArgoCD (sur le master)
+
+Le Secret `argocd-oidc` (ns `argocd`) doit contenir **la même valeur en clair** que
+`ARGOCD_CLIENT_SECRET` côté Dex c'est exactement le pattern de Grafana, dont le
+client secret est scellé **des deux côtés** (ns `dex` **et** ns `monitoring`).
+
+> Le fichier `infra/argocd/argocd-oidc-sealedsecret.yaml` versionné est un
+> **placeholder** (`clientSecret: REPLACE_WITH_SEALED_VALUE`). **Il faut le
+> régénérer** avant tout déploiement.
+
+Prérequis : `kubeseal` + accès cluster sur le master, et **la valeur en clair** du
+client secret ArgoCD (celle utilisée lors du scellement de `dex-secrets`).
+
+```bash
+export KUBECONFIG=/etc/kubernetes/admin.conf
+
+# MÊME valeur en clair que ARGOCD_CLIENT_SECRET côté Dex
+ARGOCD_CLIENT_SECRET="<le secret en clair>"
+
+# On part d'un manifeste Secret portant DÉJÀ le label part-of: argocd,
+# pour que le label survive au scellement (kubeseal recopie le template).
+kubectl create secret generic argocd-oidc -n argocd \
+  --from-literal=clientSecret="$ARGOCD_CLIENT_SECRET" \
+  --dry-run=client -o yaml \
+  | kubectl label -f - --local --dry-run=client -o yaml \
+      app.kubernetes.io/part-of=argocd \
+  | kubeseal --format=yaml --scope strict \
+      --controller-name sealed-secrets-controller \
+      --controller-namespace kube-system \
+  > infra/argocd/argocd-oidc-sealedsecret.yaml
+```
+
+> Vérifier que le bloc `template.metadata.labels` du fichier produit contient bien
+> `app.kubernetes.io/part-of: argocd` (sinon ArgoCD refusera de lire le secret).
+> Le fichier produit est chiffré, **sûr à committer**.
+
+#### Je n'ai plus la valeur en clair ? (rotation)
+
+Si le client secret d'origine est perdu, on en génère un nouveau et on le scelle
+**des deux côtés** (Dex **et** ArgoCD), avec la même valeur :
+
+```bash
+NEW_SECRET=$(openssl rand -hex 24)
+
+# 1. Mettre à jour ARGOCD_CLIENT_SECRET dans dex-secrets (merge sans toucher au reste)
+kubectl create secret generic dex-secrets -n dex \
+  --from-literal=ARGOCD_CLIENT_SECRET="$NEW_SECRET" --dry-run=client -o yaml \
+  | kubeseal --format=yaml --scope strict \
+      --controller-name sealed-secrets-controller --controller-namespace kube-system \
+      --merge-into infra/dex/dex-sealedsecret.yaml
+
+# 2. (Re)générer infra/argocd/argocd-oidc-sealedsecret.yaml avec la même valeur
+#    (commande de la section précédente, ARGOCD_CLIENT_SECRET="$NEW_SECRET")
+```
+
+Puis re-déployer **dex** et **argocd**.
+
+### Déployer
+
+```bash
+cd ansible
+# Helm (values.yaml : oidc.config + rbac + dex désactivé) puis kubectl apply -k
+ansible-playbook -i inventory.yml deploy_argocd.yml
+# ou via l'orchestrateur :
+ansible-playbook -i inventory.yml deploy_all.yml --tags argocd
+```
+
+### Se connecter
+
+1. Ouvrir `https://argocd.15-237-15-14.nip.io`.
+2. Cliquer sur **« Log in via Dex »**.
+3. Saisir `admin@kubequest.local` + le mot de passe Dex (ou passer par Microsoft
+   Entra ID).
+4. Arrivée dans ArgoCD avec le rôle **admin**.
+
+> **Accès de secours (break-glass)** : le compte local `admin` d'ArgoCD reste
+> actif (`kubectl -n argocd get secret argocd-initial-admin-secret -o
+> jsonpath='{.data.password}' | base64 -d`). Utile si Dex est indisponible. La
+> connexion locale se fait sous le formulaire « Log in via Dex ».
+
+### Mapping des rôles (RBAC)
+
+Le rôle ArgoCD est déterminé **par email** (comme Grafana et Headlamp), via
+`argocd-rbac-cm` :
+
+| Claim email | Rôle ArgoCD | Effet |
+| ----------- | ----------- | ----- |
+| `admin@kubequest.local` | `role:admin` | Accès complet (sync, suppression, settings) |
+| tout autre (`user@kubequest.local`, …) | `role:readonly` (défaut) | Lecture seule |
+
+`scopes: "[email, groups]"` indique à ArgoCD de matcher les politiques sur les
+claims `email` **et** `groups`. Les comptes locaux Dex n'émettent pas de `groups`
+(cf. [docs/dex.md](dex.md#mapping-des-rôles-grafana)), d'où le matching par email ;
+le matching par **groupe** deviendra possible avec les groupes Entra ID (ajouter
+p. ex. `g, <group-id>, role:admin`).
+
+### Dépannage
+
+| Symptôme | Piste |
+| -------- | ----- |
+| `invalid_client` / `unauthorized_client` au retour de Dex | `clientSecret` côté ArgoCD ≠ `ARGOCD_CLIENT_SECRET` côté Dex. Re-sceller avec **la même valeur** des deux côtés. |
+| `redirect_uri did not match` | `configs.cm.url` ≠ `redirectURIs` du client `argocd` dans Dex. Doit donner exactement `https://argocd.<nip>/auth/callback`. |
+| Bouton « Log in via Dex » absent | `oidc.config` non pris en compte : vérifier `kubectl -n argocd get cm argocd-cm -o yaml` et redémarrer `deploy/argocd-server`. |
+| `failed to query provider ... /.well-known/openid-configuration` | Le pod `argocd-server` n'atteint pas l'`issuer` Dex (URL publique du master, **hairpin réseau**) ou l'`issuer` ne correspond pas. Vérifier la connectivité et l'égalité stricte des issuers. |
+| Connecté mais tout est en lecture seule | RBAC : email ≠ `admin@kubequest.local`, ou `scopes` ne contient pas `email`. Vérifier `argocd-rbac-cm`. |
+| `argocd-oidc` Secret absent | Le SealedSecret est resté en placeholder ou a échoué au déchiffrement : `kubectl -n argocd get sealedsecret,secret argocd-oidc` et logs du contrôleur sealed-secrets. |
 
 ---
 
