@@ -1,0 +1,69 @@
+---
+- name: "[ARGOCD] Créer le namespace {{ argocd_namespace }}"
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k8s_master_config }}"
+    api_version: v1
+    kind: Namespace
+    name: "{{ argocd_namespace }}"
+    state: present
+
+- name: "[ARGOCD] Créer le répertoire des manifests sur le master"
+  ansible.builtin.file:
+    path: /tmp/kubequest/infra/argocd
+    state: directory
+    mode: "0755"
+
+- name: "[ARGOCD] Copier les manifests ArgoCD sur le master (depuis la machine de contrôle)"
+  ansible.builtin.copy:
+    src: "{{ argocd_kustomize_src }}/"
+    dest: /tmp/kubequest/infra/argocd/
+    mode: "0644"
+    directory_mode: "0755"
+
+- name: "[ARGOCD] Ajouter le repo Helm {{ argocd_chart_repo_name }}"
+  ansible.builtin.command:
+    argv:
+      - helm
+      - repo
+      - add
+      - "{{ argocd_chart_repo_name }}"
+      - "{{ argocd_chart_repo_url }}"
+  register: argocd_helm_repo_add
+  failed_when: >-
+    argocd_helm_repo_add.rc != 0
+    and ('already exists' not in (argocd_helm_repo_add.stderr | default('')))
+  changed_when: "'already exists' not in (argocd_helm_repo_add.stderr | default(''))"
+
+- name: "[ARGOCD] Mettre à jour le cache des repos Helm"
+  ansible.builtin.command: helm repo update
+  changed_when: false
+
+- name: "[ARGOCD] Installer / mettre à jour ArgoCD via Helm"
+  kubernetes.core.helm:
+    kubeconfig: "{{ k8s_master_config }}"
+    name: "{{ argocd_release_name }}"
+    chart_ref: "{{ argocd_chart_repo_name }}/{{ argocd_chart_ref }}"
+    chart_version: "{{ argocd_chart_version }}"
+    release_namespace: "{{ argocd_namespace }}"
+    create_namespace: true
+    update_repo_cache: false
+    values_files:
+      - /tmp/kubequest/infra/argocd/values.yaml
+    wait: true
+    timeout: 5m
+
+- name: "[ARGOCD] Attendre que le Deployment argocd-server soit ready"
+  ansible.builtin.shell: |
+    export KUBECONFIG={{ k8s_master_config }}
+    kubectl -n {{ argocd_namespace }} rollout status deploy/argocd-server --timeout=180s
+  args:
+    executable: /bin/bash
+  changed_when: false
+
+- name: "[ARGOCD] Attendre que le Deployment argocd-repo-server soit ready"
+  ansible.builtin.shell: |
+    export KUBECONFIG={{ k8s_master_config }}
+    kubectl -n {{ argocd_namespace }} rollout status deploy/argocd-repo-server --timeout=180s
+  args:
+    executable: /bin/bash
+  changed_when: false

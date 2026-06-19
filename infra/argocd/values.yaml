@@ -1,0 +1,48 @@
+---
+# Configuration ArgoCD
+# ConfigMap pour le serveur
+configs:
+  params:
+    server.insecure: true
+
+# Ressources recommandées pour un environnement de test
+controller:
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 250m
+      memory: 256Mi
+
+redis:
+  resources:
+    limits:
+      cpu: 200m
+      memory: 128Mi
+    requests:
+      cpu: 100m
+      memory: 64Mi
+
+repoServer:
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 250m
+      memory: 256Mi
+
+server:
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 250m
+      memory: 256Mi
+  service:
+    type: ClusterIP
+  # Désactiver l'ingress automatique, nous utiliserons HTTPRoute
+  ingress:
+    enabled: false

@@ -42,6 +42,12 @@ config:
       redirectURIs:
         - "https://headlamp.15-237-15-14.nip.io/oidc-callback"
 
+    - id: "argocd"
+      name: ArgoCD
+      secretEnv: ARGOCD_CLIENT_SECRET
+      redirectURIs:
+        - "https://argocd.15-237-15-14.nip.io/auth/callback"
+
   connectors:
     - type: oidc
       id: microsoft

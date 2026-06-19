@@ -1,6 +1,6 @@
 # Flux de déploiement
 
-## CI/CD — Publication du chart et de l'image
+## CI/CD + GitOps — Publication et déploiement
 
 ```mermaid
 flowchart TD
@@ -10,14 +10,12 @@ flowchart TD
         code[Modification du code\nou du chart Helm]
         sealed[values.sealed.yaml\nchiffré versionné]
         gitops[gitops/sample-app/values.yaml\nconfig déploiement]
-        ghcr_env[GITHUB_USER / GITHUB_TOKEN\nvariables d'environnement]
     end
 
     subgraph github[GitHub]
         push[Push sur une branche]
         subgraph ci[GitHub Actions]
             ci_docker[docker-build.yml\nBuild image + update GitOps]
-            ci_deploy[deploy-sample-app.yml\nAnsible helm upgrade]
             ci_helm[publish-sample-app-chart.yml\nPackage et push\ndu chart Helm]
         end
     end
@@ -27,11 +25,12 @@ flowchart TD
         chart[Chart Helm OCI\ncharts/sample-app:0.1.0]
     end
 
-    subgraph ansible[Ansible CI ou machine locale]
-        playbook[deploy_app.yml\nvalues.sealed + gitops + registry\nHelm upgrade --install]
+    subgraph ansible[Ansible Infra]
+        infra[deploy_all.yml\nInfra : SealedSecrets, Traefik, ArgoCD]
     end
 
-    subgraph cluster[Cluster Kubernetes AWS]
+    subgraph cluster[Cluster Kubernetes]
+        argocd[ArgoCD\nGitOps Controller]
         helm_release[Release Helm : app\nNamespace : sample-app]
         sealed_ctrl[Sealed Secrets Controller]
         subgraph pods[Pods]
@@ -47,13 +46,8 @@ flowchart TD
     push --> ci_docker --> img
     push --> ci_helm --> chart
     ci_docker --> gitops
-    gitops --> ci_deploy
-    ci_deploy --> playbook
-    dev --> |ansible-playbook manuel| playbook
-    chart --> |helm pull OCI| playbook
-    sealed --> playbook
-    ghcr_env --> playbook
-    playbook --> helm_release
+    gitops --> argocd
+    argocd --> helm_release
     helm_release --> sealed_ctrl
     sealed_ctrl --> |Secret déchiffré| pods
     img --> |imagePull| app_pod
@@ -61,13 +55,18 @@ flowchart TD
     helm_release --> migration
     migration --> mysql_pod
     gateway --> app_pod
+    dev --> |ansible-playbook infra| infra
+    infra --> argocd
 ```
 
-## Ordre des opérations lors d'un `helm upgrade --install`
+**Note** : Le workflow `deploy-sample-app.yml` est obsolète. Le déploiement passe maintenant exclusivement par ArgoCD GitOps.
+
+## Ordre des opérations lors d'un sync ArgoCD
 
 ```mermaid
 sequenceDiagram
-    participant A as Ansible
+    participant G as Git Push
+    participant A as ArgoCD
     participant H as Helm
     participant K as Kubernetes
     participant S as Sealed Secrets
@@ -75,7 +74,9 @@ sequenceDiagram
     participant J as Migration Job
     participant P as App Pods
 
-    A->>H: helm upgrade --install app oci://...
+    G->>A: gitops/sample-app/values.yaml modifié
+    A->>A: Détection du changement (polling ou webhook)
+    A->>H: helm upgrade --install app charts/sample-app
     H->>K: Créer SealedSecret (APP_KEY, DB_PASSWORD)
     S->>K: Déchiffrer en Secret Kubernetes
     H->>K: Créer Secret registry GHCR
@@ -92,5 +93,6 @@ sequenceDiagram
     J->>M: php artisan migrate --force
     M-->>J: Migrations OK
     J-->>H: Job succeeded
-    H-->>A: Release déployée ✓
+    H-->>A: Sync terminé ✓
+    A->>A: Application status : Synced & Healthy
 ```

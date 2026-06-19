@@ -35,6 +35,7 @@ Déploiement d'un cluster **Kubernetes auto-géré sur AWS EC2** (Amazon Linux 2
 | Logging (Loki + Promtail) | [docs/loki-promtail-setup.md](docs/loki-promtail-setup.md) |
 | Dex IDP (SSO Grafana, comptes locaux) | [docs/dex.md](docs/dex.md) |
 | Headlamp | [docs/headlamp.md](docs/headlamp.md) |
+| ArgoCD (SSO via Dex) | [docs/argocd.md](docs/argocd.md) |
 | Backups MySQL | [docs/mysql-backup.md](docs/mysql-backup.md) |
 | Flux de déploiement CI/CD | [docs/deployment-flow.md](docs/deployment-flow.md) |
 | CI/CD workflows GitHub Actions | [docs/ci-cd.md](docs/ci-cd.md) |

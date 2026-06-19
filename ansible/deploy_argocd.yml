@@ -1,0 +1,7 @@
+---
+- name: Déployer ArgoCD (HTTPRoute et ressources supplémentaires)
+  hosts: k8s_master
+  gather_facts: no
+  roles:
+    - role: argocd
+      tags: [deploy]

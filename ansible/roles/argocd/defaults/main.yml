@@ -1,0 +1,11 @@
+---
+# Variables par défaut pour le rôle ArgoCD
+
+argocd_namespace: argocd
+argocd_release_name: argocd
+argocd_chart_repo_name: argo
+argocd_chart_repo_url: https://argoproj.github.io/argo-helm
+argocd_chart_ref: argo-cd
+argocd_chart_version: "7.8.23"
+
+argocd_kustomize_src: "{{ playbook_dir }}/../infra/argocd"

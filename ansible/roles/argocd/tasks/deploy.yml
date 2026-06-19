@@ -1,0 +1,28 @@
+---
+- name: "[ARGOCD] Copier les manifests ArgoCD sur le master"
+  ansible.builtin.copy:
+    src: "{{ argocd_kustomize_src }}/"
+    dest: /tmp/kubequest/infra/argocd/
+    mode: "0644"
+    directory_mode: "0755"
+
+- name: "[ARGOCD] Appliquer les ressources supplémentaires (HTTPRoute, etc.)"
+  ansible.builtin.shell: |
+    set -euo pipefail
+    KUBECONFIG="{{ k8s_master_config }}" kubectl apply -k /tmp/kubequest/infra/argocd/
+  args:
+    executable: /bin/bash
+
+- name: "[ARGOCD] Afficher le statut des pods ArgoCD"
+  ansible.builtin.shell: |
+    export KUBECONFIG={{ k8s_master_config }}
+    echo ""
+    echo "=== ArgoCD Pods Status ==="
+    kubectl get pods -n {{ argocd_namespace }}
+    echo ""
+    echo "=== ArgoCD Services ==="
+    kubectl get svc -n {{ argocd_namespace }}
+    echo ""
+  args:
+    executable: /bin/bash
+  changed_when: false

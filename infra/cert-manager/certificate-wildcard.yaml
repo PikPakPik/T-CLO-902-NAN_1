@@ -14,3 +14,4 @@ spec:
     - "headlamp.15-237-15-14.nip.io"
     - "grafana.15-237-15-14.nip.io"
     - "dex.15-237-15-14.nip.io"
+    - "argocd.15-237-15-14.nip.io"

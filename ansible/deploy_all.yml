@@ -43,6 +43,14 @@
   ansible.builtin.import_playbook: deploy_dex.yml
   tags: [monitor, dex]
 
+- name: Installer ArgoCD
+  ansible.builtin.import_playbook: install_argocd.yml
+  tags: [argocd, argocd-install]
+
+- name: Déployer ArgoCD
+  ansible.builtin.import_playbook: deploy_argocd.yml
+  tags: [argocd, argocd-deploy]
+
 - name: Déployer la stack monitoring
   ansible.builtin.import_playbook: deploy_monitoring.yml
   tags: [monitor, monitoring]
@@ -54,7 +62,3 @@
 - name: Déployer Headlamp
   ansible.builtin.import_playbook: deploy_headlamp.yml
   tags: [monitor, headlamp]
-
-- name: Déployer sample-app (Helm)
-  ansible.builtin.import_playbook: deploy_app.yml
-  tags: [app]

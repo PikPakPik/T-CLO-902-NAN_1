@@ -1,0 +1,23 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: sample-app
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/EpitechMscProPromo2026/T-CLO-902-NAN_1
+    targetRevision: main
+    path: charts/sample-app
+    helm:
+      releaseName: app
+      valueFiles:
+        - values.sealed.yaml
+        - ../../gitops/sample-app/values.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: sample-app
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

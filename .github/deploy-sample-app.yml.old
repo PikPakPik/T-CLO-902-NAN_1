@@ -9,7 +9,7 @@ on:
       - 'gitops/sample-app/**'
       - 'charts/sample-app/**'
       - 'ansible/deploy_app.yml'
-      - '.github/workflows/deploy-sample-app.yml'
+      - '.github/workflows/deploy-sample-app.yml'"
 
 jobs:
   deploy:

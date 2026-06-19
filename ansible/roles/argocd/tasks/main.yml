@@ -1,0 +1,6 @@
+---
+- import_tasks: install.yml
+  tags: [argocd, install]
+
+- import_tasks: deploy.yml
+  tags: [argocd, deploy]
