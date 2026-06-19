@@ -54,37 +54,56 @@ Déploiement d'un cluster **Kubernetes auto-géré sur AWS EC2** (Amazon Linux 2
 
 ## 1. Architecture cible
 
-```
-                        Internet
-                           │  (80 HTTP → 443 HTTPS)
-                           ▼
-              ┌──────────────────────────┐
-              │  AWS Security Group      │
-              │  Bastion = IP publique   │
-              │  master : 15.237.15.14   │
-              └────────────┬─────────────┘
-                           ▼
-   ┌───────────────────────────────────────────────┐
-   │ MASTER  (control-plane)   15.237.15.14        │
-   │   • kube-apiserver / etcd / scheduler         │
-   │   • Traefik (hostNetwork :80, :443)           │
-   │   • SealedSecret                              │
-   └───────────────────┬───────────────────────────┘
-                       │  réseau interne VPC (Calico)
-       ┌───────────────┼───────────────┐
-       ▼               ▼               ▼
-   ┌─────────────┐ ┌─────────────┐ ┌──────────────┐
-   │  Worker 1   │ │  Worker 2   │ │  Worker 3    │
-   ├─────────────┤ ├─────────────┤ ├──────────────┤
-   │ Monitoring  │ │    apps     │ │    apps      │
-   │ Prom/Grafana│ │   node-exp  │ │   node-exp   │
-   │   node-exp  │ │   Dex IDP   │ │   Headlamp   │
-   └─────────────┘ └─────────────┘ └──────────────┘
-```
+```mermaid
+flowchart TB
+    internet(["🌐 Internet"])
 
-> \* Le **contrôleur Sealed Secrets** (namespace `kube-system`) n'est **pas épinglé** : installé sans `nodeSelector` ni tolération du taint control-plane, il est placé par le scheduler sur un **worker quelconque** (Worker3 dans l'exemple). Son emplacement peut changer après un redémarrage du pod c'est normal et sans impact (le déchiffrement reste cluster-wide).
+    subgraph aws["☁️ AWS VPC — 10.0.3.0/24"]
+        sg{{"AWS Security Group<br/>ports 22 · 80 · 443"}}
 
-> La **stack monitoring** (Prometheus, Grafana, Alertmanager, prometheus-operator, kube-state-metrics) est **épinglée sur Worker1**. Seul `node-exporter` tourne sur tous les workers.
+        subgraph master["🟦 MASTER — control-plane (bastion SSH)<br/>public 15.237.15.14 · privé 10.0.3.214"]
+            cp["kube-apiserver · etcd<br/>scheduler · controller-manager"]
+            traefik["Traefik (Gateway API)<br/>hostNetwork :80 / :443"]
+            certmgr["cert-manager<br/>(Let's Encrypt TLS)"]
+            ss["Sealed Secrets controller<br/>(kube-system)"]
+        end
+
+        subgraph w1["🟩 Worker 1 — 10.0.3.198"]
+            mon["Stack monitoring<br/>Prometheus · Grafana · Alertmanager<br/>kube-state-metrics · local-path"]
+            loki["Loki — SingleBinary<br/>(logging · namespace monitoring)"]
+            ne1["node-exporter · Promtail"]
+        end
+
+        subgraph w2["🟩 Worker 2 — 10.0.3.187"]
+            dex["Dex IDP (OIDC / SSO)"]
+            ne2["node-exporter · Promtail"]
+            app2["sample-app (Laravel + MySQL)"]
+        end
+
+        subgraph w3["🟩 Worker 3 — 10.0.3.213"]
+            head["Headlamp (dashboard)"]
+            ne3["node-exporter · Promtail"]
+            app3["sample-app (Laravel + MySQL)"]
+        end
+    end
+
+    internet -->|"80 → 443 HTTPS"| sg
+    sg -->|"trafic HTTP/HTTPS"| traefik
+    internet -. "SSH 22 (jump host)" .-> master
+    master -. "ProxyCommand SSH" .-> w1 & w2 & w3
+
+    cp -. "réseau interne VPC · CNI Calico v3.31.4" .- w1 & w2 & w3
+
+    traefik -->|HTTPRoute| mon
+    traefik -->|HTTPRoute| dex
+    traefik -->|HTTPRoute| head
+    traefik -->|HTTPRoute| app2 & app3
+
+    classDef masterNode fill:#dbeafe,stroke:#2563eb,color:#1e3a8a
+    classDef workerNode fill:#dcfce7,stroke:#16a34a,color:#14532d
+    class master masterNode
+    class w1,w2,w3 workerNode
+```
 
 | Composant | Rôle | Emplacement |
 | --------- | ---- | ----------- |

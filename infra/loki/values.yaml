@@ -20,6 +20,8 @@ singleBinary:
   persistence:
     enabled: true
     size: 5Gi
+  nodeSelector:
+    kubernetes.io/hostname: ip-10-0-3-198.eu-west-3.compute.internal
 read:
   replicas: 0
 write:

@@ -1,2 +1,9 @@
 ---
 fullnameOverride: sealed-secrets-controller
+
+nodeSelector:
+  kubernetes.io/hostname: ip-10-0-3-214.eu-west-3.compute.internal
+tolerations:
+  - key: node-role.kubernetes.io/control-plane
+    operator: Exists
+    effect: NoSchedule
