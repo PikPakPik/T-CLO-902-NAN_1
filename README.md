@@ -60,56 +60,72 @@ flowchart TB
     internet(["🌐 Internet"])
 
     subgraph aws["☁️ AWS VPC — 10.0.3.0/24"]
-        sg{{"AWS Security Group<br/>ports 22 · 80 · 443"}}
-
-        subgraph master["🟦 MASTER — control-plane (bastion SSH)<br/>public 15.237.15.14 · privé 10.0.3.214"]
-            cp["kube-apiserver · etcd<br/>scheduler · controller-manager"]
-            traefik["Traefik (Gateway API)<br/>hostNetwork :80 / :443"]
-            certmgr["cert-manager<br/>(Let's Encrypt TLS)"]
-            ss["Sealed Secrets controller<br/>(kube-system)"]
+        subgraph master["🟦 MASTER — bastion SSH · 15.237.15.14"]
+            cp["control-plane<br/>apiserver · etcd · controller-manager"]
+            sched["kube-scheduler<br/>décide du placement des pods"]
+            traefik["Traefik<br/>ingress HTTPS"]
+            ss["Sealed Secrets"]
         end
 
-        subgraph w1["🟩 Worker 1 — 10.0.3.198"]
-            mon["Stack monitoring<br/>Prometheus · Grafana · Alertmanager<br/>kube-state-metrics · local-path"]
-            loki["Loki — SingleBinary<br/>(logging · namespace monitoring)"]
-            ne1["node-exporter · Promtail"]
+        subgraph workers["Workers"]
+            subgraph w1["🟩 Worker 1"]
+                prom["Prometheus"]
+                graf["Grafana"]
+                alert["Alertmanager"]
+                ksm["kube-state-metrics"]
+                loki["Loki"]
+            end
+            subgraph w2["🟩 Worker 2"]
+                dex["Dex SSO"]
+            end
+            subgraph w3["🟩 Worker 3"]
+                head["Headlamp"]
+                mysql["MySQL"]
+            end
         end
 
-        subgraph w2["🟩 Worker 2 — 10.0.3.187"]
-            dex["Dex IDP (OIDC / SSO)"]
-            ne2["node-exporter · Promtail"]
-            app2["sample-app (Laravel + MySQL)"]
+        subgraph ds["🔁 DaemonSets un pod par noeud"]
+            ne["node-exporter"]
+            ptm["Promtail"]
+            calico["calico-node (CNI)"]
         end
 
-        subgraph w3["🟩 Worker 3 — 10.0.3.213"]
-            head["Headlamp (dashboard)"]
-            ne3["node-exporter · Promtail"]
-            app3["sample-app (Laravel + MySQL)"]
+        subgraph float["Pods placés automatiquement"]
+            certmgr["cert-manager<br/>TLS Let's Encrypt"]
+            metrics["metrics-server"]
+            gk["OPA Gatekeeper"]
+            argo["ArgoCD"]
+            app["sample-app<br/>Laravel"]
+            backup["MySQL backup<br/>CronJob"]
         end
     end
 
-    internet -->|"80 → 443 HTTPS"| sg
-    sg -->|"trafic HTTP/HTTPS"| traefik
-    internet -. "SSH 22 (jump host)" .-> master
-    master -. "ProxyCommand SSH" .-> w1 & w2 & w3
+    
 
-    cp -. "réseau interne VPC · CNI Calico v3.31.4" .- w1 & w2 & w3
-
-    traefik -->|HTTPRoute| mon
-    traefik -->|HTTPRoute| dex
-    traefik -->|HTTPRoute| head
-    traefik -->|HTTPRoute| app2 & app3
+    internet -->|"HTTPS 80 → 443"| traefik
+    internet -. "SSH 22 (bastion)" .-> master
+    master -. "ProxyCommand SSH · CNI Calico" .- workers
+    traefik -->|HTTPRoute| graf & dex & head & app & argo
+    sched -. "choisit le nœud" .-> float
 
     classDef masterNode fill:#dbeafe,stroke:#2563eb,color:#1e3a8a
     classDef workerNode fill:#dcfce7,stroke:#16a34a,color:#14532d
+    classDef workersNode fill:#f0fdfa,stroke:#0d9488,color:#134e4a
+    classDef pod fill:#ffedd5,stroke:#ea580c,stroke-width:2px,color:#7c2d12
+    classDef dsNode fill:#fef9c3,stroke:#ca8a04,color:#713f12
+    classDef floatNode fill:#f1f5f9,stroke:#64748b,color:#0f172a
     class master masterNode
+    class workers workersNode
     class w1,w2,w3 workerNode
+    class ds dsNode
+    class float floatNode
+    class cp,sched,traefik,ss,prom,graf,alert,ksm,loki,dex,head,app,mysql,ne,ptm,calico,certmgr,metrics,gk,argo,backup pod
 ```
 
 | Composant | Rôle | Emplacement |
 | --------- | ---- | ----------- |
 | **Master** | Control-plane + bastion SSH + Traefik + cert-manager | EC2 publique `15.237.15.14` |
-| **Worker 1** | Stack monitoring (Prometheus/Grafana/Alertmanager) + apps | EC2 privée |
+| **Worker 1** | Stack monitoring (Prometheus/Grafana/Alertmanager) + apps | EC2 privée (accès via bastion master) |
 | **Worker 2** | Dex IDP + apps | EC2 privée (accès via bastion master) |
 | **Worker 3** | Headlamp + apps | EC2 privée (accès via bastion master) |
 | **Logging** | Loki (SingleBinary, non épinglé) + Promtail (DaemonSet) | namespace `monitoring` |

@@ -42,6 +42,15 @@ resources:
     memory: 512Mi
 
 affinity:
+  nodeAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        preference:
+          matchExpressions:
+            - key: kubequest/role
+              operator: NotIn
+              values:
+                - database
   podAntiAffinity:
     preferredDuringSchedulingIgnoredDuringExecution:
       - weight: 100
