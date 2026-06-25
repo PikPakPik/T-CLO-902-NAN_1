@@ -76,7 +76,7 @@ ansible-playbook -i ansible/inventory.yml ansible/deploy_all.yml --tags sealed-s
 | `sealed_secrets_controller_version` | `0.32.2` |
 | `sealed_secrets_chart_version` | `2.17.7` |
 | `sealed_secrets_release_name` | `sealed-secrets` |
-| `sealed_secrets_chart_repo_url` | `https://bitnami-labs.github.io/sealed-secrets` |
+| `sealed_secrets_chart_repo_url` | `https://bitnami.github.io/sealed-secrets` |
 
 > ⚠️ La version du CLI `kubeseal` doit correspondre à celle du contrôleur (`sealed_secrets_controller_version`) pour éviter les incompatibilités de format.
 
