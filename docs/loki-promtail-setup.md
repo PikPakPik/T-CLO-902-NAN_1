@@ -1,4 +1,4 @@
-# Loki + Promtail — Stack de logging
+# Loki + Promtail - Stack de logging
 
 ## Vue d'ensemble
 
@@ -41,6 +41,8 @@ Loki peut s'exécuter en mode distribué (read, write, backend séparés) ou en 
 
 Les logs sont stockés sur un PersistentVolume de 5 Gi. Cela garantit que les logs survivent à un redémarrage du pod Loki. Pour un environnement de production à plus grande échelle, on utiliserait du stockage objet (S3), mais le filesystem est adapté à notre contexte.
 
+> Note : le pod Loki est epingle sur **worker1** via `singleBinary.nodeSelector` (`kubernetes.io/hostname: ip-10-0-3-198.eu-west-3.compute.internal`, dans `infra/loki/values.yaml`). Son PVC de 5 Gi depend donc de `local-path` sur worker1 : si le node est recree ou change d'IP interne, mettre a jour ce nodeSelector (sinon le pod reste `Pending`).
+
 ## Installation
 
 ### Prérequis
@@ -62,7 +64,7 @@ ansible-playbook deploy_all.yml --tags logging
 ### Vérification
 
 ```bash
-# Vérifier que Loki tourne (2/2 Running)
+# Vérifier que Loki tourne (1/1 Running)
 kubectl get pods -n monitoring | grep loki
 
 # Vérifier que Promtail tourne (1 pod par noeud)
@@ -81,7 +83,7 @@ kubectl exec -n monitoring loki-0 -- wget -qO- http://localhost:3100/ready
 5. Authentication : No Authentication
 6. Cliquer Save & test
 
-## Utilisation — Requêtes LogQL
+## Utilisation - Requêtes LogQL
 
 ### Requêtes de base
 
@@ -107,6 +109,8 @@ Pendant la démo d'auto-scaling et de rollback :
 
 - Loki : 3.6.7 (chart grafana/loki 7.0.0)
 - Promtail : 3.5.1 (chart grafana/promtail 6.17.1)
+
+> Note : seules les versions de **chart** sont epinglees dans le depot (loki 7.0.0, promtail 6.17.1, dans `roles/loki/defaults/main.yml`). Les versions applicatives (Loki 3.6.7 / Promtail 3.5.1) sont les valeurs par defaut de ces charts et ne sont **pas** forcees ici : elles peuvent varier selon la version reelle du chart resolue par Helm.
 
 ## Désinstallation
 

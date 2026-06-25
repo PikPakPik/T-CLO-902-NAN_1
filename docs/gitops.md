@@ -1,75 +1,59 @@
-# GitOps (sans ArgoCD)
+# GitOps (ArgoCD)
 
-Le déploiement de `sample-app` est **piloté par Git** : la CI met à jour `gitops/sample-app/values.yaml`, puis déploie automatiquement sur le cluster.
+Le déploiement de `sample-app` est **piloté par Git** via **ArgoCD** : la CI met à jour `gitops/sample-app/values.yaml`, et ArgoCD surveille Git puis synchronise automatiquement le chart sur le cluster (mode pull).
 
 ## Flux
 
 ```mermaid
 flowchart LR
     push[Push app sur main] --> build[docker-build.yml]
-    build --> ghcr[Image → GHCR]
+    build --> ghcr[Image -> GHCR]
     build --> gitops[Commit gitops/sample-app/values.yaml]
-    gitops --> deploy[deploy-sample-app.yml]
-    deploy --> ansible[ansible/deploy_app.yml]
-    ansible --> helm[helm upgrade sur le cluster]
+    gitops --> argocd[ArgoCD watch Git]
+    argocd --> sync[Sync auto du chart sur le cluster]
 ```
 
 1. Tu pushes du code dans `resources/sample-app-master/`
 2. La CI build l'image et la pousse sur GHCR
-3. La CI met à jour `gitops/sample-app/values.yaml` (annotation `git-sha` → force le rollout)
-4. Le push GitOps déclenche `deploy-sample-app.yml`
-5. Ansible exécute `helm upgrade` avec :
-   - `charts/sample-app/values.sealed.yaml` secrets chiffrés
-   - `gitops/sample-app/values.yaml` tag image, réplicas, etc.
-   - registry GHCR généré depuis `GITHUB_TOKEN` en CI
+3. La CI met a jour `gitops/sample-app/values.yaml` (`image.tag` + annotation `git-sha` -> force le rollout)
+4. ArgoCD detecte le changement dans Git
+5. ArgoCD synchronise le chart `charts/sample-app` avec :
+   - `charts/sample-app/values.sealed.yaml` secrets chiffres
+   - `gitops/sample-app/values.yaml` tag image, annotations, etc.
 
-## Fichiers clés
+## Application ArgoCD
 
-| Fichier | Rôle |
+L'`Application` est definie dans `infra/argocd/app-argocd-sample-app.yaml` (objet `argoproj.io/v1alpha1`, enregistre dans `infra/argocd/kustomization.yaml`) :
+
+- **Source** : ce depot, branche `main`, path `charts/sample-app`.
+- **Values** : `values.sealed.yaml` puis `../../gitops/sample-app/values.yaml`.
+- **Destination** : namespace `sample-app`.
+- **syncPolicy.automated** : `prune: true`, `selfHeal: true` (ArgoCD reconcilie en continu et supprime les ressources orphelines).
+
+## Fichiers cles
+
+| Fichier | Role |
 |---------|------|
-| `gitops/sample-app/values.yaml` | Config de déploiement versionnée (image, annotations) |
-| `charts/sample-app/values.sealed.yaml` | Secrets scellés (APP_KEY, DB password) |
-| `.github/workflows/deploy-sample-app.yml` | Déploiement auto sur push GitOps / chart |
-| `.github/workflows/docker-build.yml` | Build image + mise à jour GitOps |
+| `gitops/sample-app/values.yaml` | Config de deploiement versionnee (image, annotations) |
+| `charts/sample-app/values.sealed.yaml` | Secrets scelles (APP_KEY, DB password) |
+| `infra/argocd/app-argocd-sample-app.yaml` | Application ArgoCD (source Git + sync auto) |
+| `.github/workflows/docker-build.yml` | Build image + mise a jour GitOps |
 
-## Déclencheurs du déploiement
+## Modifier la config de deploiement
 
-Le workflow `deploy-sample-app.yml` se lance sur :
-- push `main` modifiant `gitops/sample-app/**` ou `charts/sample-app/**`
-- déclenchement manuel (`workflow_dispatch`)
-
-## Déploiement manuel
-
-```bash
-export GITHUB_USER="<github-username>"
-export GITHUB_TOKEN="<github-token>"
-ansible-playbook -i ansible/inventory.yml ansible/deploy_app.yml
-```
-
-## Modifier la config de déploiement
-
-Édite `gitops/sample-app/values.yaml` et push sur `main` :
+Edite `gitops/sample-app/values.yaml` et push sur `main` ; ArgoCD applique le changement :
 
 ```yaml
 image:
-  tag: "ef1499512d04"      # SHA12 du commit (réécrit par la CI à chaque build)
+  tag: "ef1499512d04"      # SHA12 du commit (reecrit par la CI a chaque build)
   pullPolicy: IfNotPresent
-
-replicaCount: 2
 
 podAnnotations:
   kubequest.io/git-sha: "ef1499512d04"
 ```
 
-La CI réécrit `image.tag` (SHA12 du commit) **et** `podAnnotations.kubequest.io/git-sha` à chaque build : le changement de tag suffit à redéployer les pods, et l'annotation `git-sha` apporte une robustesse supplémentaire.
+La CI reecrit `image.tag` (SHA12 du commit) **et** `podAnnotations.kubequest.io/git-sha` a chaque build : le changement de tag suffit a redeployer les pods, et l'annotation `git-sha` apporte une robustesse supplementaire.
 
-## Prérequis CI
+## Synchronisation
 
-L'environnement GitHub `deployment` doit contenir :
-- `EC2_SSH_KEY` clé SSH pour accéder au master Kubernetes
-
-Le `GITHUB_TOKEN` du workflow fournit l'accès au pull GHCR.
-
-## Évolution future
-
-Quand ArgoCD sera ajouté, `gitops/sample-app/values.yaml` restera la source de vérité seul le mécanisme de sync changera (ArgoCD watch Git au lieu de la CI qui lance Ansible).
+ArgoCD surveille Git (polling, ou webhook si configure) et synchronise automatiquement des qu'un changement est detecte sur `charts/sample-app` ou les values. `gitops/sample-app/values.yaml` reste la **source de verite** du tag d'image deploye. Voir aussi [docs/argocd.md](argocd.md).

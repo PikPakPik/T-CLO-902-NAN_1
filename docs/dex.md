@@ -1,4 +1,4 @@
-# Dex IDP — Fournisseur d'identité (SSO)
+# Dex IDP - Fournisseur d'identité (SSO)
 
 ## Objectif
 
@@ -13,8 +13,8 @@
 
 | Service | Intégration | Détail |
 | ------- | ----------- | ------ |
-| **Grafana** | OAuth générique → Dex, **actif** | Grafana valide les jetons lui-même. |
-| **Headlamp** | OIDC → **actif** | L'OIDC « réel » de Headlamp exige que le **kube-apiserver** fasse confiance à Dex (`--oidc-issuer-url`…). C'est en place depuis le passage en **HTTPS** (cert Let's Encrypt) voir [docs/headlamp.md](headlamp.md#authentification-oidc-via-dex-sso). |
+| **Grafana** | OAuth générique -> Dex, **actif** | Grafana valide les jetons lui-même. |
+| **Headlamp** | OIDC -> **actif** | L'OIDC "réel" de Headlamp exige que le **kube-apiserver** fasse confiance à Dex (`--oidc-issuer-url`...). C'est en place depuis le passage en **HTTPS** (cert Let's Encrypt) voir [docs/headlamp.md](headlamp.md#authentification-oidc-via-dex-sso). |
 
 Le client OAuth `headlamp` est déclaré dans Dex (`config.staticClients`, redirect `/oidc-callback`).
 
@@ -37,7 +37,7 @@ sur le master** puis de lancer `helm ... -f infra/dex/values.yaml` et `kubectl a
   Émetteur : `https://dex.<nip>` (endpoints `/auth`, `/token`, `/userinfo`, `/keys`, `/.well-known/openid-configuration`).
 - **Secrets** : hash bcrypt du mot de passe admin + client secrets injectés via le SealedSecret `dex-secrets` (envFrom), puis lus **directement** depuis l'environnement avec `hashFromEnv` / `secretEnv` (et **non** via l'expansion `$VAR`, qui casserait le `$` du hash bcrypt).
 
-`<nip>` = IP publique du master avec `.` → `-`, suffixé `.nip.io` (ex. `dex.15-237-15-14.nip.io`).
+`<nip>` = IP publique du master avec `.` -> `-`, suffixé `.nip.io` (ex. `dex.15-237-15-14.nip.io`).
 
 ## Composants
 
@@ -68,7 +68,7 @@ read -s -p "Mot de passe admin Dex : " PW; echo
 ADMIN_HASH=$(PW="$PW" python3 -c "import bcrypt,os;print(bcrypt.hashpw(os.environ['PW'].encode(),bcrypt.gensalt(10)).decode())")
 
 # Mot de passe user Dex -> hash bcrypt (saisie masquée)
-read -s -p "Mot de passe admin Dex : " PW; echo
+read -s -p "Mot de passe user Dex : " PW; echo
 USER_HASH=$(PW="$PW" python3 -c "import bcrypt,os;print(bcrypt.hashpw(os.environ['PW'].encode(),bcrypt.gensalt(10)).decode())")
 
 # Client secrets OAuth (même valeur Grafana des deux côtés)
@@ -112,13 +112,13 @@ ansible-playbook -i ansible/inventory.yml ansible/deploy_all.yml --tags dex,moni
 ansible-playbook -i ansible/inventory.yml ansible/deploy_dex.yml
 ```
 
-Ordre dans `deploy_all.yml` : … → `gateway` (Traefik) → **`dex`** → `monitoring` → `headlamp` → `app`.
+Ordre dans `deploy_all.yml` : ... -> `gateway` (Traefik) -> **`dex`** -> `monitoring` -> `headlamp` -> `app`.
 Dex est déployé **avant** monitoring pour être disponible au démarrage de Grafana.
 
 ### 3. Se connecter à Grafana via Dex
 
 1. Ouvrir `https://grafana.<nip>`.
-2. Cliquer sur **« Sign in with Dex »**.
+2. Cliquer sur **"Sign in with Dex"**.
 3. Saisir `admin@kubequest.local` + le mot de passe scellé à l'étape 1.
 4. Arrivée dans Grafana avec le rôle **Admin**.
 
@@ -155,7 +155,7 @@ Les comptes locaux Dex (`enablePasswordDB`) **n'émettent pas** de claim `groups
 role_attribute_path = email == 'admin@kubequest.local' && 'Admin' || 'Viewer'
 ```
 
-→ l'email admin obtient **Admin**, tous les autres comptes **Viewer**. Le mapping par **groupe**
+-> l'email admin obtient **Admin**, tous les autres comptes **Viewer**. Le mapping par **groupe**
 arrivera avec le connecteur Entra ID.
 
 ## Connecteur Microsoft Entra ID
@@ -188,7 +188,7 @@ Dex propose deux connecteurs pour Entra ID. On utilise volontairement le connect
 | Consentement | **Admin requis** sur notre tenant | User-consentable (si le tenant l'autorise) |
 | Groupes Entra natifs | Oui (via `GroupMember.Read.All`) | Non (claim `groups` à configurer côté Entra) |
 
-**Raison déterminante** : notre tenant restreint le consentement utilisateur. Le connecteur `microsoft` demande la permission Graph `User.Read`, ce qui déclenche une **demande de consentement administrateur** (message *« Votre administrateur a reçu une notification de votre demande d'accès… »*) et **bloque la connexion** tant qu'un admin n'a pas approuvé or nous n'avons pas d'accès admin garanti sur ce tenant. Le connecteur `oidc` ne demande que les permissions **OpenID de base**, sans aucun appel Graph, ce qui maximise les chances de passer **sans intervention admin**.
+**Raison déterminante** : notre tenant restreint le consentement utilisateur. Le connecteur `microsoft` demande la permission Graph `User.Read`, ce qui déclenche une **demande de consentement administrateur** (message *"Votre administrateur a reçu une notification de votre demande d'accès..."*) et **bloque la connexion** tant qu'un admin n'a pas approuvé or nous n'avons pas d'accès admin garanti sur ce tenant. Le connecteur `oidc` ne demande que les permissions **OpenID de base**, sans aucun appel Graph, ce qui maximise les chances de passer **sans intervention admin**.
 
 > Si le tenant bloque **tout** consentement utilisateur (y compris OpenID de base), la connexion retombera sur la demande admin malgré tout mais c'est alors un consentement trivial à accorder (permissions minimales), et aucune config Dex ne peut le contourner.
 
@@ -198,8 +198,8 @@ Dex propose deux connecteurs pour Entra ID. On utilise volontairement le connect
 - **`insecureSkipEmailVerified: true`** : Entra v2.0 n'émet pas le claim `email_verified` ; sans ça
   Dex rejetterait l'email.
 - **`getUserInfo: false`** : les claims viennent de l'ID token, pas du endpoint UserInfo.
-- **Claim `email` à activer côté Entra** : Entra v2.0 **n'émet pas `email` par défaut** dans l'ID token. Côté App Registration → **Token configuration → Add optional claim → ID → `email`**. Sans cet *optional claim*, Dex échoue au retour (`email claim not found`). Repli possible : mapper sur `preferred_username` (l'UPN) si aucun email n'est disponible.
-- **Secret** : `$MICROSOFT_CLIENT_SECRET` est étendu depuis l'environnement (le connecteur `oidc` n'a pas de champ `secretEnv:` comme les `staticClients`). La clé est ajoutée au SealedSecret `dex-secrets` (cf. [Ajouter un compte local](#ajouter-un-compte-local) pour le `kubeseal --merge-into`, avec `--from-literal=MICROSOFT_CLIENT_SECRET=…`).
+- **Claim `email` à activer côté Entra** : Entra v2.0 **n'émet pas `email` par défaut** dans l'ID token. Côté App Registration -> **Token configuration -> Add optional claim -> ID -> `email`**. Sans cet *optional claim*, Dex échoue au retour (`email claim not found`). Repli possible : mapper sur `preferred_username` (l'UPN) si aucun email n'est disponible.
+- **Secret** : `$MICROSOFT_CLIENT_SECRET` est étendu depuis l'environnement (le connecteur `oidc` n'a pas de champ `secretEnv:` comme les `staticClients`). La clé est ajoutée au SealedSecret `dex-secrets` (cf. [Ajouter un compte local](#ajouter-un-compte-local) pour le `kubeseal --merge-into`, avec `--from-literal=MICROSOFT_CLIENT_SECRET=...`).
 
 ### Revenir au connecteur `microsoft`
 
@@ -224,17 +224,17 @@ curl -s https://dex.<nip>/.well-known/openid-configuration | jq .issuer
 
 | Symptôme | Piste |
 | -------- | ----- |
-| Pod Dex en `CrashLoopBackOff` | Variables d'env manquantes → vérifier que `dex-secrets` est bien déchiffré (`kubectl get secret -n dex`) avant le démarrage. |
+| Pod Dex en `CrashLoopBackOff` | Variables d'env manquantes -> vérifier que `dex-secrets` est bien déchiffré (`kubectl get secret -n dex`) avant le démarrage. |
 | Dex : `malformed bcrypt hash: ... too short` | Le hash bcrypt a été passé via l'expansion `$VAR` (les `$` du hash sont cassés). Utiliser `hashFromEnv:` (et `secretEnv:` pour les clients), pas `hash:`/`secret:` avec `$VAR`. |
-| Grafana : « login.OAuthLogin(missing saved state) » ou redirect KO | Vérifier que `redirectURIs` du client `grafana` correspond exactement à `https://grafana.<nip>/login/generic_oauth`. |
+| Grafana : "login.OAuthLogin(missing saved state)" ou redirect KO | Vérifier que `redirectURIs` du client `grafana` correspond exactement à `https://grafana.<nip>/login/generic_oauth`. |
 | Grafana : timeout sur `token_url`/`api_url` | **Hairpin réseau** : le pod Grafana (worker1) n'atteint pas l'IP publique du master. Repli : pointer `token_url`/`api_url` sur le service interne `http://dex.dex.svc.cluster.local:5556/token|/userinfo` (laisser `auth_url` public). |
 
-## Phase TLS (Entra ID + Headlamp) — réalisée
+## Phase TLS (Entra ID + Headlamp) - réalisée
 
 Avec cert-manager / TLS en place :
 
 1. **Dex en HTTPS** ✅ : émetteur `https://dex.<nip>`, certificat Let's Encrypt prod (Gateway Traefik), `redirectURIs` et URLs OAuth Grafana en `https`.
 2. **Connecteur Microsoft Entra ID** ✅ : `connectors:` de type `oidc` dans la config Dex (cf. [Connecteur Microsoft Entra ID](#connecteur-microsoft-entra-id)).
-3. **Headlamp OIDC** ✅ : flags `--oidc-*` posés sur le kube-apiserver, `config.oidc` activé dans le chart Headlamp (client `headlamp`), et RBAC mappé sur l'email (`admin@kubequest.local` → `cluster-admin`, `user@kubequest.local` → `headlamp-viewer`). Détails et procédure de scellement dans [docs/headlamp.md](headlamp.md#authentification-oidc-via-dex-sso).
+3. **Headlamp OIDC** ✅ : flags `--oidc-*` posés sur le kube-apiserver, `config.oidc` activé dans le chart Headlamp (client `headlamp`), et RBAC mappé sur l'email (`admin@kubequest.local` -> `cluster-admin`, `user@kubequest.local` -> `headlamp-viewer`). Détails et procédure de scellement dans [docs/headlamp.md](headlamp.md#authentification-oidc-via-dex-sso).
 
 Voir aussi : [Sealed Secrets](sealed-secrets.md), [Monitoring](monitoring.md), [Headlamp](headlamp.md).

@@ -1,4 +1,4 @@
-# KubeQuest — T-CLO-902
+# KubeQuest - T-CLO-902
 
 Déploiement d'un cluster **Kubernetes auto-géré sur AWS EC2** (Amazon Linux 2023), entièrement automatisé avec **Ansible**, et hébergeant :
 
@@ -25,7 +25,7 @@ Déploiement d'un cluster **Kubernetes auto-géré sur AWS EC2** (Amazon Linux 2
 | Connexion SSH (bastion / ProxyCommand) | [docs/ssh.md](docs/ssh.md) |
 | Choix du CNI (Calico) | [docs/cni.md](docs/cni.md) |
 | Traefik architecture | [docs/traefik-architecture.md](docs/traefik-architecture.md) |
-| Migration Envoy → Traefik | [docs/traefik-migration.md](docs/traefik-migration.md) |
+| Migration Envoy -> Traefik | [docs/traefik-migration.md](docs/traefik-migration.md) |
 | HTTPS / TLS (cert-manager, Let's Encrypt) | [docs/cert-manager.md](docs/cert-manager.md) |
 | Sealed Secrets | [docs/sealed-secrets.md](docs/sealed-secrets.md) |
 | OPA Gatekeeper (policy as code / admission webhook) | [docs/gatekeeper.md](docs/gatekeeper.md) |
@@ -39,7 +39,7 @@ Déploiement d'un cluster **Kubernetes auto-géré sur AWS EC2** (Amazon Linux 2
 | Backups MySQL | [docs/mysql-backup.md](docs/mysql-backup.md) |
 | Flux de déploiement CI/CD | [docs/deployment-flow.md](docs/deployment-flow.md) |
 | CI/CD workflows GitHub Actions | [docs/ci-cd.md](docs/ci-cd.md) |
-| GitOps (sans ArgoCD) | [docs/gitops.md](docs/gitops.md) |
+| GitOps (ArgoCD) | [docs/gitops.md](docs/gitops.md) |
 
 ## Équipe
 
@@ -59,9 +59,9 @@ Déploiement d'un cluster **Kubernetes auto-géré sur AWS EC2** (Amazon Linux 2
 flowchart TB
     internet(["🌐 Internet"])
 
-    subgraph aws["☁️ AWS VPC — 10.0.3.0/24"]
-        subgraph master["🟦 MASTER — bastion SSH · 15.237.15.14"]
-            cp["control-plane<br/>apiserver · etcd · controller-manager"]
+    subgraph aws["☁️ AWS VPC - 10.0.3.0/24"]
+        subgraph master["🟦 MASTER - bastion SSH - 15.237.15.14"]
+            cp["control-plane<br/>apiserver - etcd - controller-manager"]
             sched["kube-scheduler<br/>décide du placement des pods"]
             traefik["Traefik<br/>ingress HTTPS"]
             ss["Sealed Secrets"]
@@ -102,9 +102,9 @@ flowchart TB
 
     
 
-    internet -->|"HTTPS 80 → 443"| traefik
+    internet -->|"HTTPS 80 -> 443"| traefik
     internet -. "SSH 22 (bastion)" .-> master
-    master -. "ProxyCommand SSH · CNI Calico" .- workers
+    master -. "ProxyCommand SSH - CNI Calico" .- workers
     traefik -->|HTTPRoute| graf & dex & head & app & argo
     sched -. "choisit le nœud" .-> float
 
@@ -128,11 +128,11 @@ flowchart TB
 | **Worker 1** | Stack monitoring (Prometheus/Grafana/Alertmanager) + apps | EC2 privée (accès via bastion master) |
 | **Worker 2** | Dex IDP + apps | EC2 privée (accès via bastion master) |
 | **Worker 3** | Headlamp + apps | EC2 privée (accès via bastion master) |
-| **Logging** | Loki (SingleBinary, non épinglé) + Promtail (DaemonSet) | namespace `monitoring` |
-| **Sealed Secrets** | Contrôleur de déchiffrement (`kube-system`, non épinglé) | un worker (scheduler) |
+| **Logging** | Loki (SingleBinary, épinglé sur Worker 1 via nodeSelector `ip-10-0-3-198`) + Promtail (DaemonSet) | namespace `monitoring` |
+| **Sealed Secrets** | Contrôleur de déchiffrement (`kube-system`), épinglé sur le Master via nodeSelector `ip-10-0-3-214` (toleration control-plane) | Master |
 | **cert-manager** | Émission/renouvellement TLS (Let's Encrypt) | namespace `cert-manager` |
 | **CNI** | Calico `v3.31.4` | tous les noeuds |
-| **Kubernetes** | `v1.35` (kubeadm) | — |
+| **Kubernetes** | `v1.35` (kubeadm) | - |
 
 > Le **master est le seul noeud accessible depuis Internet**. Les workers sont joints en SSH via un **ProxyCommand** (jump host) à travers le master. Voir [docs/ssh.md](docs/ssh.md).
 
@@ -144,11 +144,11 @@ flowchart TB
 
 | Outil | Version conseillée | Usage |
 | ----- | ------------------ | ----- |
-| `ansible` | ≥ 2.15 | Orchestration du déploiement |
-| `ansible-galaxy` collection `kubernetes.core` | — | Modules `k8s` / `helm` |
-| `kubeseal` | ≥ 0.32 | Chiffrement des secrets (Sealed Secrets) |
-| `kubectl` | ≥ 1.30 | (optionnel) administration locale |
-| `git` | — | Cloner le dépôt |
+| `ansible` | >= 2.15 | Orchestration du déploiement |
+| `ansible-galaxy` collection `kubernetes.core` | - | Modules `k8s` / `helm` |
+| `kubeseal` | >= 0.32 | Chiffrement des secrets (Sealed Secrets) |
+| `kubectl` | >= 1.30 | (optionnel) administration locale |
+| `git` | - | Cloner le dépôt |
 | Clé SSH | `~/.ssh/kubequest.pem` | Accès aux EC2 (`chmod 600`) |
 
 Installation de Ansible :
@@ -189,7 +189,7 @@ chmod 600 ~/.ssh/kubequest.pem
 ├── gitops/sample-app/       # Values GitOps (image, réplicas, HPA)
 ├── infra/                   # Manifests Kustomize (traefik, cert-manager, dex, monitoring, loki, headlamp)
 ├── resources/sample-app-master/  # Code source Laravel
-├── .github/workflows/       # CI/CD (build image, publish chart, deploy)
+├── .github/workflows/       # CI/CD (build image, publish chart, connectivity tests)
 └── docs/                    # Documentation détaillée par composant
 ```
 
@@ -204,7 +204,7 @@ git clone <url-du-depot> T-CLO-902-NAN_1
 cd T-CLO-902-NAN_1/ansible
 ```
 
-### Étape 1 — Configurer l'inventaire
+### Étape 1 - Configurer l'inventaire
 
 Éditez [`ansible/inventory.yml`](ansible/inventory.yml) pour refléter votre infrastructure :
 
@@ -214,7 +214,7 @@ cd T-CLO-902-NAN_1/ansible
 - Dans `ansible_ssh_common_args`, remplacez l'IP du bastion (`ec2-user@15.237.15.14`) par votre IP publique master.
 - `ansible_ssh_private_key_file` : chemin de votre clé (`~/.ssh/kubequest.pem`).
 
-### Étape 2 — Vérifier la connectivité SSH
+### Étape 2 - Vérifier la connectivité SSH
 
 ```bash
 ansible-playbook test_connectivity.yml
@@ -224,18 +224,18 @@ ansible-playbook deploy_all.yml --tags connectivity
 
 Tous les hôtes doivent répondre (master en direct, workers via le ProxyCommand).
 
-### Étape 3 — Déploiement complet (recommandé)
+### Étape 3 - Déploiement complet (recommandé)
 
 Un seul playbook orchestre tout l'enchaînement :
-`connectivité → cluster → metrics-server → sealed-secrets → gatekeeper → Traefik → cert-manager → Dex → monitoring → Loki → Headlamp → sample-app`.
+`connectivité -> cluster -> metrics-server -> sealed-secrets -> gatekeeper -> Traefik -> cert-manager -> Dex -> monitoring -> Loki -> Headlamp -> sample-app`.
 
 ```bash
 ansible-playbook -i ansible/inventory.yml ansible/deploy_all.yml
 ```
 
-> **Important** : l'étape `sample-app` nécessite que les secrets aient été générés au préalable (voir [Étape 5](#étape-5--préparer-les-secrets-sealed-secrets)) et que `GITHUB_USER` / `GITHUB_TOKEN` soient exportés **une seule fois** (création du secret de registry GHCR). Si vous découvrez le projet, lancez d'abord les étapes 4 → 5 puis l'étape 6, ou exécutez `deploy_all.yml` jusqu'au monitoring (`--skip-tags app`) puis préparez les secrets avant de déployer l'app.
+> **Important** : l'étape `sample-app` nécessite que les secrets aient été générés au préalable (voir [Étape 5](#étape-5--préparer-les-secrets-sealed-secrets)) et que `GITHUB_USER` / `GITHUB_TOKEN` soient exportés **une seule fois** (création du secret de registry GHCR). Si vous découvrez le projet, lancez d'abord les étapes 4 -> 5 puis l'étape 6, ou exécutez `deploy_all.yml` jusqu'au monitoring (`--skip-tags app`) puis préparez les secrets avant de déployer l'app.
 
-### Étape 4 — Déploiement étape par étape (alternative / dépannage)
+### Étape 4 - Déploiement étape par étape (alternative / dépannage)
 
 `deploy_all.yml` accepte des **tags** pour rejouer une partie seulement :
 
@@ -291,17 +291,17 @@ Chaque étape dispose aussi de son playbook dédié, équivalent :
 | `headlamp` | `deploy_headlamp.yml` |
 | `app` | `deploy_app.yml` |
 
-### Étape 5 — Préparer les secrets (Sealed Secrets)
+### Étape 5 - Préparer les secrets (Sealed Secrets)
 
 Avant de déployer l'application (et le monitoring / Dex), les **secrets doivent être scellés** avec la clé publique du contrôleur Sealed Secrets du cluster cible :
 
-- **sample-app** : `APP_KEY` Laravel + mot de passe MySQL → `charts/sample-app/values.sealed.yaml` ;
-- **Grafana / Dex** : identifiants admin Grafana, hash bcrypt + client secrets OAuth → `infra/monitoring/`, `infra/dex/` ;
-- **Headlamp** : configuration OIDC → `infra/headlamp/headlamp-oidc-sealedsecret.yaml`.
+- **sample-app** : `APP_KEY` Laravel + mot de passe MySQL -> `charts/sample-app/values.sealed.yaml` ;
+- **Grafana / Dex** : identifiants admin Grafana, hash bcrypt + client secrets OAuth -> `infra/monitoring/`, `infra/dex/` ;
+- **Headlamp** : configuration OIDC -> `infra/headlamp/headlamp-oidc-sealedsecret.yaml`.
 
 Procédure de scellement détaillée : [docs/sealed-secrets.md](docs/sealed-secrets.md) (et [docs/dex.md](docs/dex.md) pour les secrets SSO). Les fichiers `SealedSecret` produits sont chiffrés et **sûrs à committer**.
 
-### Étape 6 — Déployer l'application
+### Étape 6 - Déployer l'application
 
 Le pull de l'image se fait depuis **GHCR** : un `imagePullSecret` est créé à partir d'un token GitHub (scope `read:packages`). À fournir **une seule fois** (le secret persiste ensuite) :
 

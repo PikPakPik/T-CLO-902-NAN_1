@@ -1,6 +1,6 @@
 # Flux de déploiement
 
-## CI/CD + GitOps — Publication et déploiement
+## CI/CD + GitOps - Publication et déploiement
 
 ```mermaid
 flowchart TD
@@ -34,8 +34,8 @@ flowchart TD
         helm_release[Release Helm : app\nNamespace : sample-app]
         sealed_ctrl[Sealed Secrets Controller]
         subgraph pods[Pods]
-            app_pod[Laravel app\n× 2 réplicas]
-            mysql_pod[MySQL 8.0\n× 1]
+            app_pod[Laravel app\nx 2 réplicas]
+            mysql_pod[MySQL 8.0\nx 1]
         end
         migration[Job de migration\nphp artisan migrate]
         gateway[Traefik\npublic-gateway]
@@ -79,7 +79,7 @@ sequenceDiagram
     A->>H: helm upgrade --install app charts/sample-app
     H->>K: Créer SealedSecret (APP_KEY, DB_PASSWORD)
     S->>K: Déchiffrer en Secret Kubernetes
-    H->>K: Créer Secret registry GHCR
+    Note over K: Secret registry GHCR (ghcr-registry) deja cree par Ansible/bootstrap (kubectl create secret docker-registry)
     H->>K: Créer PVC MySQL
     H->>K: Créer Deployment MySQL + Service
     H->>K: Créer Deployment app + Service

@@ -1,4 +1,4 @@
-# Headlamp — Tableau de bord Kubernetes
+# Headlamp - Tableau de bord Kubernetes
 
 Headlamp est une interface web open-source pour Kubernetes. Elle permet de visualiser et gérer les ressources du cluster (pods, deployments, services, namespaces, logs, etc.) depuis un navigateur.
 
@@ -40,12 +40,12 @@ Headlamp est déployé via deux mécanismes combinés :
 helm repo add headlamp https://kubernetes-sigs.github.io/headlamp/
 helm repo update
 helm upgrade --install headlamp headlamp/headlamp \
-  --namespace headlamp --create-namespace \
-  --set clusterRoleBinding.create=false
+  -n headlamp --create-namespace \
+  -f infra/headlamp/values.yaml
 kubectl apply -k infra/headlamp/
 ```
 
-> Le chart est installé avec `clusterRoleBinding.create=false` : on utilise le `ClusterRoleBinding`/`ClusterRole` dédiés (`headlamp-admin` → `headlamp-viewer`) fournis dans `infra/headlamp/` plutôt que celui du chart.
+> Le chart est installé avec `-f infra/headlamp/values.yaml`, qui porte `clusterRoleBinding.create=false` (on utilise le `ClusterRoleBinding`/`ClusterRole` dédiés `headlamp-admin` -> `headlamp-viewer` fournis dans `infra/headlamp/` plutôt que celui du chart), le `nodeSelector` (worker3) et la config OIDC.
 
 ### Déploiement via Ansible (recommandé)
 
@@ -110,7 +110,7 @@ flowchart LR
 
 Trois volets, tous gérés par le rôle Ansible `headlamp` :
 
-1. **Chart Headlamp** (`infra/headlamp/values.yaml`) `config.oidc.externalSecret` pointe sur le Secret scellé `headlamp-oidc` (clés `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_ISSUER_URL`, `OIDC_SCOPES`). Le client OAuth `headlamp` est déjà déclaré dans Dex (redirect `/oidc-callback`).
+1. **Chart Headlamp** (`infra/headlamp/values.yaml`) `config.oidc.externalSecret` pointe sur le Secret scellé `headlamp-oidc` (clés `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_ISSUER_URL`, `OIDC_SCOPES`, `OIDC_CALLBACK_URL`). Le client OAuth `headlamp` est déjà déclaré dans Dex (redirect `/oidc-callback`).
 2. **kube-apiserver** la tâche `roles/headlamp/tasks/apiserver-oidc.yml` ajoute de façon idempotente `--oidc-issuer-url=https://dex.<nip>`, `--oidc-client-id=headlamp`, `--oidc-username-claim=email`, `--oidc-groups-claim=groups` au manifeste statique `/etc/kubernetes/manifests/kube-apiserver.yaml` (sauvegarde `pre-oidc.bak` hors du dossier surveillé par le kubelet). Le kubelet recrée alors le pod apiserver (~30 s d'indispo API).
 3. **RBAC** (`infra/headlamp/clusterrolebinding-oidc.yaml`) mapping par **email** (claim `--oidc-username-claim=email`) ou par **groupe** (claim `--oidc-groups-claim=groups`) :
 
@@ -120,7 +120,7 @@ Trois volets, tous gérés par le rôle Ansible `headlamp` :
    | User local | `User` | `user@kubequest.local` | `headlamp-viewer` (lecture seule) |
    | Groupe Entra | `Group` | `<group-object-id>` ou `<nom>` | `cluster-admin` (exemple) |
 
-   > Le claim `groups` (fédération Entra) contient par défaut des **Object IDs (GUID)** ; pour mapper par **nom**, configure le claim Groups d'Entra sur « Group names » (App Registration → Token configuration). Les **comptes locaux Dex n'émettent pas de `groups`** → ils restent mappés par email.
+   > Le claim `groups` (fédération Entra) contient par défaut des **Object IDs (GUID)** ; pour mapper par **nom**, configure le claim Groups d'Entra sur "Group names" (App Registration -> Token configuration). Les **comptes locaux Dex n'émettent pas de `groups`** -> ils restent mappés par email.
 
 > L'`--oidc-issuer-url` doit être **identique** au `config.issuer` de Dex (sans `/` final). Le certificat Dex étant Let's Encrypt **prod**, l'apiserver le valide via les CA racines système : aucun `--oidc-ca-file` n'est nécessaire.
 
@@ -139,6 +139,7 @@ kubectl create secret generic headlamp-oidc -n headlamp \
   --from-literal=OIDC_CLIENT_SECRET="$HEADLAMP_CLIENT_SECRET" \
   --from-literal=OIDC_ISSUER_URL=https://dex.15-237-15-14.nip.io \
   --from-literal=OIDC_SCOPES="openid profile email groups" \
+  --from-literal=OIDC_CALLBACK_URL=https://headlamp.15-237-15-14.nip.io/oidc-callback \
   --dry-run=client -o yaml \
   | kubeseal --format=yaml --scope strict \
       --controller-name sealed-secrets-controller --controller-namespace kube-system \
@@ -149,7 +150,7 @@ Le fichier produit est chiffré (sûr à committer). Sans lui, `kubectl apply -k
 
 ### Se connecter
 
-1. Ouvrir `https://headlamp.15-237-15-14.nip.io/` → **Sign in** → redirection Dex.
+1. Ouvrir `https://headlamp.15-237-15-14.nip.io/` -> **Sign in** -> redirection Dex.
 2. Saisir `admin@kubequest.local` (accès `cluster-admin`) ou `user@kubequest.local` (lecture seule).
 
 ## Authentification par token (break-glass)

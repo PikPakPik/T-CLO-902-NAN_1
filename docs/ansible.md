@@ -35,12 +35,12 @@ Variables communes (`all.vars`) :
 | Variable | Valeur |
 | -------- | ------ |
 | `ansible_user` | `ec2-user` |
-| `ansible_become` | `yes` (sudo → root) |
+| `ansible_become` | `yes` (sudo -> root) |
 | `ansible_ssh_private_key_file` | `~/.ssh/kubequest.pem` |
 
 Les workers définissent `ansible_ssh_common_args` avec un `ProxyCommand` qui rebondit sur
 `ec2-user@15.237.15.14`. Seul le master expose une IP publique ; les ports applicatifs ouverts sont
-le **80** (redirection HTTP→HTTPS + challenge ACME) et le **443** (HTTPS), voir
+le **80** (redirection HTTP->HTTPS + challenge ACME) et le **443** (HTTPS), voir
 [`docs/traefik-architecture.md`](traefik-architecture.md).
 
 ## Configuration (`ansible.cfg`)
@@ -54,7 +54,7 @@ le **80** (redirection HTTP→HTTPS + challenge ACME) et le **443** (HTTPS), voi
 | `ssh_args` | `ControlMaster/ControlPersist=300s` | Multiplexage SSH (perf AWS) |
 | `pipelining` | `True` | Moins d'allers-retours SSH par tâche |
 
-## Variables — deux niveaux
+## Variables - deux niveaux
 
 Les variables sont réparties en deux endroits :
 
@@ -77,11 +77,11 @@ Les variables sont réparties en deux endroits :
 | ---- | -------------- |
 | `k8s_common` | `k8s_version` (`v1.35`), `containerd_config_dir`, `containerd_config_file` |
 | `k8s_master` | `calico_version` (`v3.31.4`), `calico_manifest_url` |
-| `metrics_server` | `metrics_server_kustomize_src`, `metrics_server_namespace`, `rollout_timeout` (manifest `v0.7.2` + patch → `infra/metrics-server/`) |
+| `metrics_server` | `metrics_server_kustomize_src`, `metrics_server_namespace`, `metrics_server_rollout_timeout` (manifest `v0.7.2` + patch -> `infra/metrics-server/`) |
 | `sealed_secrets` | `sealed_secrets_controller_version` (`0.32.2`), `sealed_secrets_chart_version` (`2.17.7`), repo |
-| `traefik` | `traefik_chart_version` (`v40.2.0`), `traefik_namespace`, `gateway_name` (`public-gateway`), `traefik_kustomize_src` (config Helm → `infra/traefik/values.yaml`) |
-| `cert_manager` | `cert_manager_chart_version` (`v1.20.2`), `cert_manager_namespace`, `cert_manager_kustomize_src` (config Helm → `infra/cert-manager/values.yaml` ; ClusterIssuers/Certificate → `infra/cert-manager/`) |
-| `monitoring` | `monitoring_namespace`, `monitoring_chart_version` (`85.0.3`), `monitoring_storage_class`, `local_path_storage_kustomize_src` (manifest `v0.0.36` + patches → `infra/local-path-storage/`), `local_path_provisioner_rollout_timeout`, `monitoring_kustomize_src` (config applicative → `infra/monitoring/values.yaml`) |
+| `traefik` | `traefik_chart_version` (`v40.2.0`), `traefik_namespace`, `gateway_name` (`public-gateway`), `traefik_kustomize_src` (config Helm -> `infra/traefik/values.yaml`) |
+| `cert_manager` | `cert_manager_chart_version` (`v1.20.2`), `cert_manager_namespace`, `cert_manager_kustomize_src` (config Helm -> `infra/cert-manager/values.yaml` ; ClusterIssuers/Certificate -> `infra/cert-manager/`) |
+| `monitoring` | `monitoring_namespace`, `monitoring_chart_version` (`85.0.3`), `monitoring_storage_class`, `local_path_storage_kustomize_src` (manifest `v0.0.36` + patches -> `infra/local-path-storage/`), `local_path_provisioner_rollout_timeout`, `monitoring_kustomize_src` (config applicative -> `infra/monitoring/values.yaml`) |
 | `dex` | `dex_chart_version` (`0.23.0`), `dex_namespace`, `dex_kustomize_src` |
 | `loki` | `loki_chart_version` (`7.0.0`), `promtail_chart_version` (`6.17.1`), `loki_namespace` (`monitoring`) |
 | `headlamp` | `headlamp_namespace`, `headlamp_chart_repo_url`, `headlamp_kustomize_src` |
@@ -98,9 +98,11 @@ Les variables sont réparties en deux endroits :
 | `k8s_worker` | `kubeadm join` | [cluster-setup](cluster-setup.md) |
 | `metrics_server` | metrics-server (HPA / `kubectl top`) | [metrics-server](metrics-server.md) |
 | `sealed_secrets` | Contrôleur Sealed Secrets (Helm) | [sealed-secrets](sealed-secrets.md) |
+| `gatekeeper` | OPA Gatekeeper (validating admission webhook, Helm chart `3.22.2`) + ConstraintTemplates/Constraints | ci-dessous |
 | `traefik` | Traefik + Gateway API (CRDs, GatewayClass, Gateway) | [traefik-architecture](traefik-architecture.md) |
 | `cert_manager` | cert-manager (Helm) + ClusterIssuers Let's Encrypt + Certificate TLS | [cert-manager](cert-manager.md) |
 | `dex` | Dex IDP (SSO OIDC Grafana, Headlamp) | [dex](dex.md) |
+| `argocd` | ArgoCD (GitOps, Helm chart `7.8.23`) + HTTPRoute | ci-dessous |
 | `monitoring` | kube-prometheus-stack + HTTPRoutes | [monitoring](monitoring.md) |
 | `loki` | Loki (logs) + Promtail (collecte) | [loki-promtail-setup](loki-promtail-setup.md) |
 | `headlamp` | Headlamp (Helm + Kustomize) | [headlamp](headlamp.md) |
@@ -114,18 +116,25 @@ Les variables sont réparties en deux endroits :
 | `setup_cluster_playbook.yml` | `k8s_common`, `k8s_master`, `k8s_worker` | cluster |
 | `deploy_metrics_server.yml` | `metrics_server` | master |
 | `deploy_sealed_secrets.yml` | `sealed_secrets` | master |
+| `install_gatekeeper.yml` | `gatekeeper` (tasks `install`) | master |
+| `deploy_gatekeeper.yml` | `gatekeeper` (tasks `deploy`) | master |
 | `install_traefik.yml` | `traefik` (tasks `install`) | master |
 | `deploy_traefik.yml` | `traefik` (tasks `deploy`) | master |
 | `install_cert_manager.yml` | `cert_manager` (tasks `install`) | master |
 | `deploy_cert_manager.yml` | `cert_manager` (tasks `deploy`) | master |
 | `deploy_dex.yml` | `dex` | master |
+| `install_argocd.yml` | `argocd` (tasks `install`) | master |
+| `deploy_argocd.yml` | `argocd` (tasks `deploy`) | master |
 | `deploy_monitoring.yml` | `monitoring` | master |
 | `deploy_loki.yml` | `loki` | master |
 | `deploy_headlamp.yml` | `headlamp` | master |
-| `deploy_app.yml` | déploiement Helm `sample-app` + secret GHCR | master |
+| `deploy_app.yml` | déploiement Helm `sample-app` + secret GHCR (**autonome**, non importé par `deploy_all.yml`) | master |
+| `demo_break_worker.yml` | démo : mise en panne d'un worker (avec/sans reschedule) | master |
+| `demo_restore_worker.yml` | démo : restauration des workers cordonnés | master |
 | `cleanup_traefik.yml` | suppression des ressources Traefik | master |
-| `cleanup_gateway.yml` | suppression de l'ancien Gateway (legacy) | master |
-| `deploy_all.yml` | **orchestrateur** (import des playbooks ci-dessus) | tous |
+| `cleanup_gateway.yml` | reset complet des ressources Envoy Gateway (namespace `envoy-gateway-system`) | master |
+| `cleanup_cert_manager_traefik.yml` | nettoyage de cert-manager et Traefik pour repartir au propre | master |
+| `deploy_all.yml` | **orchestrateur** (import des playbooks ci-dessus, hors `deploy_app.yml`) | tous |
 
 ## Orchestration : `deploy_all.yml`
 
@@ -134,10 +143,13 @@ Le déploiement complet enchaîne les playbooks dans cet ordre :
 ```mermaid
 flowchart LR
     a[test_connectivity] --> b[setup_cluster] --> c[metrics_server]
-    c --> d[sealed_secrets] --> e[install_traefik] --> f[deploy_traefik]
-    f --> g[cert_manager] --> h[dex] --> i[monitoring]
-    i --> j[loki] --> k[headlamp] --> l[deploy_app]
+    c --> d[sealed_secrets] --> e[install_gatekeeper] --> f[deploy_gatekeeper]
+    f --> g[install_traefik] --> h[deploy_traefik] --> i[cert_manager install+deploy]
+    i --> j[dex] --> k[install_argocd] --> l[deploy_argocd]
+    l --> m[monitoring] --> n[loki] --> o[headlamp]
 ```
+
+> `deploy_app.yml` n'est **pas** importé par `deploy_all.yml` : la sample-app se déploie séparément (voir [`docs/helm.md`](helm.md)).
 
 ```bash
 cd ansible
@@ -149,16 +161,28 @@ Chaque étape porte un **tag** permettant une exécution ciblée :
 | Tag | Étape |
 | --- | ----- |
 | `connectivity` | Vérification SSH |
-| `cluster` | Cluster + metrics-server |
+| `cluster` | Cluster + metrics-server + Sealed Secrets (tag transverse) |
 | `metrics-server` | metrics-server seul |
 | `sealed-secrets` | Contrôleur Sealed Secrets |
+| `security` | Gatekeeper (install + deploy) (tag transverse) |
+| `gatekeeper` | Gatekeeper (install + deploy) |
+| `gatekeeper-install` | Gatekeeper (install du chart Helm seul) |
+| `gatekeeper-deploy` | Gatekeeper (ConstraintTemplates + Constraints seuls) |
+| `http` | Traefik + cert-manager (tag transverse) |
 | `gateway` | Traefik (install + deploy) |
+| `gateway-install` | Traefik (install seul) |
+| `gateway-deploy` | Traefik (deploy seul) |
 | `cert-manager` | cert-manager + ClusterIssuers + Certificate TLS |
+| `cert-manager-install` | cert-manager (install seul) |
+| `cert-manager-deploy` | ClusterIssuers + Certificates seuls |
+| `monitor` | Dex + monitoring + logging + headlamp (tag transverse) |
 | `dex` | Dex IDP (SSO) |
+| `argocd` | ArgoCD (install + deploy) |
+| `argocd-install` | ArgoCD (install seul) |
+| `argocd-deploy` | ArgoCD (HTTPRoute + ressources seules) |
 | `monitoring` | Prometheus/Grafana |
 | `logging` | Loki + Promtail |
 | `headlamp` | Headlamp |
-| `app` | sample-app |
 
 ```bash
 # Exemple : (re)déployer uniquement le monitoring

@@ -1,4 +1,4 @@
-# cert-manager — Certificats TLS (HTTPS Let's Encrypt)
+# cert-manager - Certificats TLS (HTTPS Let's Encrypt)
 
 `cert-manager` automatise l'**émission et le renouvellement** des certificats TLS du cluster. Dans KubeQuest, il fournit le **certificat HTTPS** que Traefik présente sur le port **443**, obtenu auprès de **Let's Encrypt** via le challenge **ACME HTTP-01**.
 
@@ -40,9 +40,11 @@ flowchart LR
 | `ClusterIssuer` `letsencrypt-staging` | Émetteur ACME **staging** (tests, hors quota prod) | [`infra/cert-manager/clusterissuer-letsencrypt-staging.yaml`](../infra/cert-manager/clusterissuer-letsencrypt-staging.yaml) |
 | `Certificate` `apps-tls` | Certificat **multi-SAN** signé par `letsencrypt-prod` | [`infra/cert-manager/certificate-wildcard.yaml`](../infra/cert-manager/certificate-wildcard.yaml) |
 | `Secret` `apps-tls` | Certificat + clé privée générés (consommés par le Gateway) | ns `traefik-system` (créé par cert-manager) |
-| Config Helm | `installCRDs`, `enableGatewayAPI: true` | [`infra/cert-manager/values.yaml`](../infra/cert-manager/values.yaml) |
+| Config Helm | `installCRDs: true` (top-level) + `enableGatewayAPI: true` imbrique sous le bloc `config:` (`ControllerConfiguration`) | [`infra/cert-manager/values.yaml`](../infra/cert-manager/values.yaml) |
 
 > La config (values + ClusterIssuers + Certificate) vit dans `infra/cert-manager/` **source unique, statique**, appliquée à l'identique par Ansible et consommable par ArgoCD (même modèle que Dex, monitoring, sealed-secrets).
+
+> Note sur `infra/cert-manager/values.yaml` : `installCRDs: true` est une valeur Helm **top-level**, tandis que `enableGatewayAPI: true` n'est **pas** top-level : il est imbrique sous le bloc `config:` (de `kind: ControllerConfiguration`, `apiVersion: controller.config.cert-manager.io/v1alpha1`).
 
 ## ClusterIssuers (Let's Encrypt)
 
@@ -69,7 +71,7 @@ spec:
                 kind: Gateway
 ```
 
-> ⚠️ Let's Encrypt **prod** applique des quotas (≈ 5 certificats identiques / semaine). Pour itérer sur la configuration, basculer le `Certificate` sur `letsencrypt-staging` (`issuerRef.name`), puis revenir à `letsencrypt-prod` une fois validé.
+> ⚠️ Let's Encrypt **prod** applique des quotas (~= 5 certificats identiques / semaine). Pour itérer sur la configuration, basculer le `Certificate` sur `letsencrypt-staging` (`issuerRef.name`), puis revenir à `letsencrypt-prod` une fois validé.
 
 ## Certificate (apps-tls)
 
@@ -87,6 +89,7 @@ spec:
     - "headlamp.15-237-15-14.nip.io"
     - "grafana.15-237-15-14.nip.io"
     - "dex.15-237-15-14.nip.io"
+    - "argocd.15-237-15-14.nip.io"
 ```
 
 > Les `dnsNames` sont **codés en dur** sur l'IP publique du master (`15-237-15-14`). Si l'IP change, mettre à jour `infra/cert-manager/certificate-wildcard.yaml` **et** les hostnames des `HTTPRoute`. (Le nom de fichier `certificate-wildcard.yaml` est historique : il s'agit en réalité d'une liste de SAN explicites, pas d'un wildcard `*.nip.io`.)
@@ -106,7 +109,7 @@ Le listener `websecure` du `public-gateway` référence le Secret `apps-tls` et 
         name: apps-tls
 ```
 
-La redirection **HTTP → HTTPS** est assurée par l'`HTTPRoute` `redirect-https` ([`infra/traefik/httproute-redirect-https.yaml`](../infra/traefik/httproute-redirect-https.yaml)), attachée au listener `web` (port 80), qui renvoie un **301** vers `https://`. Les `HTTPRoute` de
+La redirection **HTTP -> HTTPS** est assurée par l'`HTTPRoute` `redirect-https` ([`infra/traefik/httproute-redirect-https.yaml`](../infra/traefik/httproute-redirect-https.yaml)), attachée au listener `web` (port 80), qui renvoie un **301** vers `https://`. Les `HTTPRoute` de
 challenge ACME (`/.well-known/acme-challenge/...`) créées par cert-manager ont un path plus spécifique et **priment** sur ce catch-all (précédence Gateway API), ce qui permet le renouvellement automatique sans casser la redirection.
 
 ## Déploiement (Ansible)

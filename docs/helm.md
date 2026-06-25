@@ -34,7 +34,7 @@ Dans ce projet, Helm sert à déployer l'application Laravel et sa base de donn�
 
 ## Prérequis locaux
 
-- [`kubeseal`](https://github.com/bitnami-labs/sealed-secrets/releases) CLI installé (version identique au contrôleur, voir `ansible/roles/sealed_secrets/defaults/main.yml` → `sealed_secrets_controller_version`, soit `0.32.2`).
+- [`kubeseal`](https://github.com/bitnami-labs/sealed-secrets/releases) CLI installé (version identique au contrôleur, voir `ansible/roles/sealed_secrets/defaults/main.yml` -> `sealed_secrets_controller_version`, soit `0.32.2`).
 
 ```bash
 VERSION="0.32.2"

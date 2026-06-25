@@ -28,7 +28,12 @@ flowchart TD
         w1[Récupérer la commande join\ndepuis le master] --> w2[kubeadm join]
     end
 
-    play --> common --> master --> worker
+    subgraph labels[Play 4 hosts: k8s_master]
+        l1[Attendre que worker3\nrejoigne le cluster] --> l2[Récupérer le nom du noeud worker3]
+        l2 --> l3[Labelliser worker3\nkubequest/role=database]
+    end
+
+    play --> common --> master --> worker --> labels
 ```
 
 ## Lancer le provisioning
@@ -43,7 +48,7 @@ ansible-playbook -i ansible/inventory.yml ansible/setup_cluster_playbook.yml
 ansible-playbook -i ansible/inventory.yml ansible/deploy_all.yml --tags cluster
 ```
 
-Tags disponibles : `common` (préparation des noeuds), `master`, `worker`, `cluster`.
+Tags disponibles : `common` (préparation des noeuds), `master`, `worker`, `labels` (labellisation de worker3), `cluster`.
 
 > Toutes les tâches sont **idempotentes** : un noeud déjà initialisé/joint est détecté
 > (`/etc/kubernetes/admin.conf` côté master, `/etc/kubernetes/kubelet.conf` côté worker)
@@ -93,6 +98,14 @@ Installe les prérequis des modules Ansible `kubernetes.core` (utilisés par les
 
 > Le `kubelet.conf` des workers offre des droits limités. Pour administrer le cluster, passer par le master (`admin.conf`). Voir la note dans [`docs/initialize_vms.md`](initialize_vms.md).
 
+### Play 4 - "Labelliser les noeuds" (master, tags `labels`, `cluster`)
+
+Une fois les workers joints, un quatrième play (`hosts: k8s_master`) labellise le noeud dédié à la base de données :
+
+1. **Attendre worker3** : boucle (`until`, 30 tentatives, délai 10 s) jusqu'à ce que `worker3_internal_ip` apparaisse dans `kubectl get nodes -o wide`.
+2. **Récupérer le nom du noeud** worker3 (via `awk` sur l'IP interne) dans le *fact* `worker3_nodename`.
+3. **Labelliser** worker3 avec `kubequest/role=database` (`kubectl label node ... --overwrite`).
+
 ## Versions épinglées
 
 Les variables spécifiques à un rôle sont définies dans ses `defaults/main.yml` ; les variables transverses restent dans `group_vars/all.yml` (voir [`docs/ansible.md`](ansible.md)).
@@ -117,5 +130,5 @@ Tous les noeuds doivent être `Ready` (après convergence de Calico) et les pods
 
 ## Étapes suivantes
 
-Une fois le cluster prêt, le reste de la stack se déploie via `deploy_all.yml` (ou playbook par playbook) : metrics-server → Sealed Secrets → Traefik → monitoring → Headlamp → sample-app.
+Une fois le cluster prêt, le reste de la stack se déploie via `deploy_all.yml` (ou playbook par playbook) : metrics-server -> Sealed Secrets -> Traefik -> monitoring -> Headlamp -> sample-app.
 Voir [`docs/ansible.md`](ansible.md) pour l'ordre complet.

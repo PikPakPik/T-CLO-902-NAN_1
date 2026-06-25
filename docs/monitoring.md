@@ -1,4 +1,4 @@
-# Monitoring — Prometheus, Grafana, node-exporter
+# Monitoring - Prometheus, Grafana, node-exporter
 
 La stack de monitoring est déployée via un seul chart Helm (`kube-prometheus-stack`) qui installe en une fois Prometheus, Grafana, Alertmanager, kube-state-metrics et node-exporter, le tout orchestré par `prometheus-operator`.
 
@@ -85,7 +85,7 @@ La **configuration applicative** de la stack (Grafana SSO/datasources, tailles e
 | Secret admin Grafana              | `grafana-admin-credentials` | `infra/monitoring/values.yaml` (via SealedSecret) |
 | Ciblage des pods stateful         | `nodeSelector` sur le nom AWS de worker1 (`ip-10-0-3-198.eu-west-3.compute.internal`) | `infra/monitoring/values.yaml` |
 
-> ⚠️ Le `nodeSelector` est codé en dur sur le nom du node worker1. Si le node est recréé ou change d'IP interne, mettre à jour les 6 occurrences dans `infra/monitoring/values.yaml` **ainsi que** le patch `infra/local-path-storage/kustomization.yaml` (sinon pods `Pending`). Nom courant : `kubectl get nodes -o wide`.
+> ⚠️ Le `nodeSelector` est codé en dur sur le nom du node worker1. Si le node est recréé ou change d'IP interne, mettre à jour les 6 blocs nodeSelector (6 occurrences du hostname, `prometheusOperator` en ayant deux : `nodeSelector` et `admissionWebhooks.patch.nodeSelector`) dans `infra/monitoring/values.yaml` **ainsi que** le patch `infra/local-path-storage/kustomization.yaml` (sinon pods `Pending`). Nom courant : `kubectl get nodes -o wide`.
 
 Le **stockage** (local-path-provisioner) est lui aussi entièrement déclaratif dans `infra/local-path-storage/` : manifest amont `v0.0.36` vendorisé + patches kustomize (épinglage worker1, annotation StorageClass par défaut). Ansible applique simplement `kubectl apply -k`.
 
@@ -124,7 +124,7 @@ Identifiants par défaut :
 
 ### SSO via Dex (OAuth)
 
-Grafana propose en plus une connexion **« Sign in with Dex »** (OAuth générique) adossée aux comptes locaux Dex le mapping de rôle se fait par email (admin → `Admin`, sinon `Viewer`).
+Grafana propose en plus une connexion **"Sign in with Dex"** (OAuth générique) adossée aux comptes locaux Dex le mapping de rôle se fait par email (admin -> `Admin`, sinon `Viewer`).
 Le formulaire admin natif ci-dessus reste actif comme accès de secours. Détails et mise en place : [docs/dex.md](dex.md).
 
 ## Alertes de démo & tests de charge
@@ -147,7 +147,7 @@ Le chart déploie le jeu de règles **kube-prometheus-stack par défaut** (`Kube
 Les alertes `DemoAppHighCpu` / `DemoAppHighMemory` sont scopées sur `container="sample-app"` : il faut donc charger **ce conteneur** (pas un pod tiers). Les commandes CPU / mémoire s'arrêtent seules au bout de 4 min (`timeout 240`) ; pour couper avant, `Ctrl-C` ou `kubectl -n sample-app rollout restart deploy/app-sample-app`.
 
 ```bash
-# CPU : une boucle shell sature le quota CPU (throttlé à la limite 500m → ratio 5x le request)
+# CPU : une boucle shell sature le quota CPU (throttlé à la limite 500m -> ratio 5x le request)
 kubectl -n sample-app exec deploy/app-sample-app -c sample-app -- timeout 240 sh -c 'while :; do :; done'
 
 # Mémoire (HighMemory, sans kill) : alloue ~150 Mo (> 80% du request 128Mi, < limite 512Mi donc pas d'OOMKill)
@@ -157,16 +157,16 @@ kubectl -n sample-app exec deploy/app-sample-app -c sample-app -- timeout 240 ph
 Pour déclencher **`DemoPodOOMKilled`**, il faut au contraire **dépasser la limite** (`512Mi`) : le kernel tue le conteneur (`OOMKilled`), que kubelet redémarre ensuite. Pas de `timeout` ici la commande est interrompue par le kill lui-même.
 
 ```bash
-# OOMKill : alloue ~600 Mo (> limite 512Mi) → conteneur OOMKilled puis redémarré
+# OOMKill : alloue ~600 Mo (> limite 512Mi) -> conteneur OOMKilled puis redémarré
 kubectl -n sample-app exec deploy/app-sample-app -c sample-app -- php -d memory_limit=-1 -r '$a = str_repeat("x", 600*1024*1024); sleep(600);'
 ```
 
 Compter **~1 à 3 min** (fenêtre `rate[2m]` + `for: 1m`) avant le passage en `firing` pour CPU/mémoire ; l'`DemoPodOOMKilled` (`for: 0m`) fire quasi-immédiatement après le kill. Visualiser
-l'état dans Prometheus (`/alerts`) ou dans **Grafana → Alerting** (via la data source Alertmanager).
+l'état dans Prometheus (`/alerts`) ou dans **Grafana -> Alerting** (via la data source Alertmanager).
 
-L'OOMKill se voit aussi dans le **dashboard « Sample-app Démo »** : le panel dédié **« OOMKilled par pod »** passe à `1`, la table **« Alertes démo actives »** liste `DemoPodOOMKilled`, et le panel **« Redémarrages conteneur »** affiche le restart consécutif.
+L'OOMKill se voit aussi dans le **dashboard "Sample-app Démo"** : le panel dédié **"OOMKilled par pod"** passe à `1`, la table **"Alertes démo actives"** liste `DemoPodOOMKilled`, et le panel **"Redémarrages conteneur"** affiche le restart consécutif.
 
-> Pour déclencher l'alerte CPU **et** le HPA (démo autoscaling « bout en bout »), préférer une charge HTTP sur le service plutôt qu'un burn local p. ex. un pod jetable : `kubectl -n sample-app run loadgen --rm -it --restart=Never --image=williamyeh/hey -- -z 5m -c 50 http://app-sample-app.sample-app/`
+> Pour déclencher l'alerte CPU **et** le HPA (démo autoscaling "bout en bout"), préférer une charge HTTP sur le service plutôt qu'un burn local p. ex. un pod jetable : `kubectl -n sample-app run loadgen --rm -it --restart=Never --image=williamyeh/hey -- -z 5m -c 50 http://app-sample-app.sample-app/`
 
 ## Segmentation réseau (NetworkPolicy)
 
@@ -174,15 +174,15 @@ Par défaut, **tout pod du cluster** peut joindre Prometheus, Alertmanager ou ku
 
 | Service cible | Ingress autorisé depuis |
 | ------------- | ----------------------- |
-| Prometheus `:9090` | Grafana (requêtes) + Prometheus (self-scrape) |
-| Alertmanager `:9093` | Prometheus (alertes + scrape) + Grafana (data source + health check) + peers Alertmanager (`:9094`) |
+| Prometheus `:9090` + `:8080` | Grafana (requêtes) + Prometheus (self-scrape) |
+| Alertmanager `:9093` + `:8080` | Prometheus (alertes + scrape) + Grafana (data source + health check) + peers Alertmanager (`:9094`) |
 | kube-state-metrics `:8080` | Prometheus |
 
-Tout le reste (ex. un pod `sample-app`) est **refusé**. Les policies sont ciblées (sélecteur de pod) plutôt qu'un *default-deny* de namespace, pour ne pas casser les scrapes internes ni le flux Traefik (hostNetwork) → Grafana. Elles sont appliquées par `kubectl apply -k infra/monitoring/` (rôle `monitoring`).
+Tout le reste (ex. un pod `sample-app`) est **refusé**. Les policies sont ciblées (sélecteur de pod) plutôt qu'un *default-deny* de namespace, pour ne pas casser les scrapes internes ni le flux Traefik (hostNetwork) -> Grafana. Elles sont appliquées par `kubectl apply -k infra/monitoring/` (rôle `monitoring`).
 
 > **Caveat `kubectl port-forward`** : le port-forward vers Prometheus provient du noeud (kubelet), pas d'un pod ; selon Calico il peut être bloqué par la policy. Si c'est le cas, ajouter un `from: [{ ipBlock: { cidr: <IP_noeud>/32 } }]` sur la policy Prometheus.
 
-### node-exporter (hostNetwork) — restriction au niveau hôte
+### node-exporter (hostNetwork) - restriction au niveau hôte
 
 node-exporter tourne en **`hostNetwork: true`** (port **9100** sur l'IP de chaque noeud). Les NetworkPolicy Kubernetes **ne s'y appliquent pas**. Pour restreindre l'accès à `:9100` au seul Prometheus, il faut agir au niveau **hôte** :
 

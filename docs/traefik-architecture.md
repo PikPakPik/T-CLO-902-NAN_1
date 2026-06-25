@@ -10,7 +10,7 @@ Le **TLS est terminé par Traefik** sur le port 443 : le certificat Let's Encryp
 
 ```
                     Internet
-                       │  (80 HTTP → 443 HTTPS)
+                       │  (80 HTTP -> 443 HTTPS)
                        ▼
             ┌──────────────────────┐
             │  AWS Security Group  │
@@ -28,7 +28,7 @@ Le **TLS est terminé par Traefik** sur le port 443 : le certificat Let's Encryp
             │  │  :80  (web)        │  │
             │  │  :443 (websecure)  │  │
             │  └─────────┬──────────┘  │
-            │  cert-manager → apps-tls │
+            │  cert-manager -> apps-tls │
             └────────────┼─────────────┘
                        │
               Réseau interne K8s
@@ -84,6 +84,7 @@ metadata:
   name: traefik
 spec:
   controllerName: traefik.io/gateway-controller
+  description: Traefik Gateway Controller
 ```
 
 Défini de façon **déclarative** dans [`infra/traefik/gatewayclass.yaml`](../infra/traefik/gatewayclass.yaml) et appliqué via Kustomize (`kubectl apply -k infra/traefik/`) il n'est **pas** créé automatiquement par le chart Helm. Il fait le lien entre les ressources Gateway et le contrôleur Traefik via `controllerName: traefik.io/gateway-controller`.
@@ -105,7 +106,7 @@ spec:
       allowedRoutes:
         namespaces:
           from: All
-    - name: websecure           # HTTPS — TLS terminé par Traefik
+    - name: websecure           # HTTPS - TLS terminé par Traefik
       protocol: HTTPS
       port: 443
       allowedRoutes:
@@ -122,7 +123,7 @@ Déclare **deux** points d'entrée accessibles depuis tous les namespaces :
 - `web` (HTTP/80) sert la redirection vers HTTPS et le challenge ACME ;
 - `websecure` (HTTPS/443) termine le TLS avec le certificat `apps-tls` (cf. [docs/cert-manager.md](cert-manager.md)).
 
-### 5. Redirection HTTP → HTTPS
+### 5. Redirection HTTP -> HTTPS
 
 Une `HTTPRoute` dédiée ([`infra/traefik/httproute-redirect-https.yaml`](../infra/traefik/httproute-redirect-https.yaml)), attachée uniquement au listener `web` (port 80), renvoie un **301** vers `https://` pour tout le trafic HTTP :
 
@@ -179,17 +180,17 @@ Route le trafic de `headlamp.15-237-15-14.nip.io` vers le service Headlamp (port
 ## Flux d'une requête
 
 ```
-1.  Client → http://headlamp.15-237-15-14.nip.io
-2.  DNS (nip.io) → résout vers 15.237.15.14
-3.  TCP → arrive sur le master:80 (Security Group autorise)
-4.  Traefik (hostNetwork) → reçoit sur le listener "web" (HTTP/80)
-5.  HTTPRoute "redirect-https" → renvoie 301 vers https://headlamp.15-237-15-14.nip.io
+1.  Client -> http://headlamp.15-237-15-14.nip.io
+2.  DNS (nip.io) -> résout vers 15.237.15.14
+3.  TCP -> arrive sur le master:80 (Security Group autorise)
+4.  Traefik (hostNetwork) -> reçoit sur le listener "web" (HTTP/80)
+5.  HTTPRoute "redirect-https" -> renvoie 301 vers https://headlamp.15-237-15-14.nip.io
 6.  Client rejoue la requête en HTTPS
-7.  TCP → arrive sur le master:443
-8.  Traefik → termine le TLS avec le certificat apps-tls (cert-manager) sur le listener "websecure"
-9.  Provider Gateway API → match le hostname avec l'HTTPRoute "headlamp" (sectionName websecure)
-10. Routage interne → forward vers le Service headlamp:80 (ClusterIP)
-11. kube-proxy/Calico → route vers le pod Headlamp sur worker3
+7.  TCP -> arrive sur le master:443
+8.  Traefik -> termine le TLS avec le certificat apps-tls (cert-manager) sur le listener "websecure"
+9.  Provider Gateway API -> match le hostname avec l'HTTPRoute "headlamp" (sectionName websecure)
+10. Routage interne -> forward vers le Service headlamp:80 (ClusterIP)
+11. kube-proxy/Calico -> route vers le pod Headlamp sur worker3
 ```
 
 ## Déploiement (Ansible)
@@ -201,6 +202,7 @@ Route le trafic de `headlamp.15-237-15-14.nip.io` vers le service Headlamp (port
 | `install_traefik.yml` | Installe CRDs + Helm chart Traefik |
 | `deploy_traefik.yml` | Applique le Gateway public |
 | `cleanup_traefik.yml` | Supprime toutes les ressources Traefik |
+| `cleanup_gateway.yml` | **Heritage (legacy)** : nettoyage de l'ancien **Envoy Gateway** (namespace `envoy-gateway-system`, `EnvoyProxy envoy-nodeport`, GatewayClass `envoy-gateway`, release Helm `envoy-gateway`). Sans rapport avec Traefik : a n'utiliser que pour repartir d'un etat propre apres l'ancienne stack Envoy. |
 
 ### Ordre d'exécution
 

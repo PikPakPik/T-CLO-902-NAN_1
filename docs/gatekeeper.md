@@ -1,8 +1,8 @@
-# OPA Gatekeeper — Policy as Code (validating admission webhook)
+# OPA Gatekeeper - Policy as Code (validating admission webhook)
 
 **OPA Gatekeeper** applique des **règles de gouvernance** au cluster Kubernetes. Il s'enregistre auprès du `kube-apiserver` comme **validating admission webhook** : toute création/modification de ressource est évaluée contre des **politiques** *avant* d'être écrite dans `etcd`. Une ressource non conforme est **refusée** (et n'est jamais créée), avec un message d'erreur explicite.
 
-> Objectif dans KubeQuest : empêcher *techniquement* le déploiement de workloads non conformes dans le namespace applicatif `sample-app` (tag `:latest`, absence de limites de ressources, labels manquants) — plutôt que de seulement le documenter.
+> Objectif dans KubeQuest : empêcher *techniquement* le déploiement de workloads non conformes dans le namespace applicatif `sample-app` (tag `:latest`, absence de limites de ressources, labels manquants) - plutôt que de seulement le documenter.
 
 ## Le mécanisme
 
@@ -12,11 +12,11 @@ flowchart LR
     api -->|AdmissionReview| gk[Gatekeeper\nwebhook\nns gatekeeper-system]
     gk -->|évalue les Constraints Rego| gk
     gk -->|"✅ conforme"| etcd[(etcd)]
-    gk -.->|"❌ violation → REJET"| user
+    gk -.->|"❌ violation -> REJET"| user
 ```
 
 - **Validating** : Gatekeeper *valide* (accepte/refuse), il ne modifie pas la ressource.
-- **failurePolicy: `Ignore`** : si le pod Gatekeeper est indisponible, l'admission n'est **pas** bloquée — on évite de « bricker » le cluster.
+- **`validatingWebhookFailurePolicy: Ignore`** (nom exact de la cle dans `infra/gatekeeper/values.yaml`, equivalent au `failurePolicy: Ignore` du ValidatingWebhookConfiguration genere) : si le pod Gatekeeper est indisponible, l'admission n'est **pas** bloquée - on évite de "bricker" le cluster.
 - En plus de l'admission (préventif), Gatekeeper fait de l'**audit** périodique : il signale les ressources *déjà présentes* qui violeraient une politique (`status.violations`).
 
 ## Architecture des politiques
@@ -34,14 +34,14 @@ ConstraintTemplate (K8sDisallowedTags) > CRD k8sdisallowedtags.constraints.gatek
 Constraint (kind: K8sDisallowedTags, name: disallow-latest-tag) ──instancie──┘
 ```
 
-> ⚠️ Ordre de déploiement : une `Constraint` ne peut être appliquée qu'**après** que le CRD généré par sa `ConstraintTemplate` soit *Established*. Le rôle Ansible gère cette séquence (apply templates → `kubectl wait --for condition=established` → apply constraints).
+> ⚠️ Ordre de déploiement : une `Constraint` ne peut être appliquée qu'**après** que le CRD généré par sa `ConstraintTemplate` soit *Established*. Le rôle Ansible gère cette séquence (apply templates -> `kubectl wait --for condition=established` -> apply constraints).
 
 ## Composants déployés
 
 | Élément | Rôle | Localisation |
 | ------- | ---- | ------------ |
 | Chart Helm `gatekeeper` | Contrôleur (webhook) + audit + CRDs | `https://open-policy-agent.github.io/gatekeeper/charts` (`3.22.2`), ns `gatekeeper-system` |
-| Values Helm | `replicas: 1`, `failurePolicy: Ignore`, exemption `kube-system`/`gatekeeper-system` | [`infra/gatekeeper/values.yaml`](../infra/gatekeeper/values.yaml) |
+| Values Helm | `replicas: 1`, `validatingWebhookFailurePolicy: Ignore`, exemption `kube-system`/`gatekeeper-system` | [`infra/gatekeeper/values.yaml`](../infra/gatekeeper/values.yaml) |
 | `ConstraintTemplate` **K8sDisallowedTags** | Interdit le tag `:latest` / les images sans tag | [`infra/gatekeeper/templates/k8sdisallowedtags.yaml`](../infra/gatekeeper/templates/k8sdisallowedtags.yaml) |
 | `ConstraintTemplate` **K8sContainerLimits** | Exige `cpu`+`memory` limits par conteneur | [`infra/gatekeeper/templates/k8scontainerlimits.yaml`](../infra/gatekeeper/templates/k8scontainerlimits.yaml) |
 | `ConstraintTemplate` **K8sRequiredLabels** | Exige un jeu de labels | [`infra/gatekeeper/templates/k8srequiredlabels.yaml`](../infra/gatekeeper/templates/k8srequiredlabels.yaml) |
@@ -49,7 +49,7 @@ Constraint (kind: K8sDisallowedTags, name: disallow-latest-tag) ──instancie�
 
 ## Politiques en vigueur
 
-Toutes les Constraints sont en mode **`enforcementAction: deny`** et **limitées au namespace `sample-app`** (`match.namespaces: [sample-app]`). Aucun composant d'infrastructure (Traefik, Prometheus, cert-manager, Dex, Headlamp…) n'est donc impacté.
+Toutes les Constraints sont en mode **`enforcementAction: deny`** et **limitées au namespace `sample-app`** (`match.namespaces: [sample-app]`). Aucun composant d'infrastructure (Traefik, Prometheus, cert-manager, Dex, Headlamp...) n'est donc impacté.
 
 | Constraint | Type | Règle | Cible |
 | ---------- | ---- | ----- | ----- |

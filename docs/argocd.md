@@ -52,7 +52,7 @@ ArgoCD est un outil de **GitOps continu** pour Kubernetes. Il automatise le dép
 ### Flux de données
 
 ```
-Git Repository → ArgoCD Repository Server → Application Controller → Kubernetes Cluster
+Git Repository -> ArgoCD Repository Server -> Application Controller -> Kubernetes Cluster
                      ↓
                    Redis (cache)
 ```
@@ -198,12 +198,14 @@ ansible-playbook -i inventory.yml deploy_all.yml --tags "argocd"
 ```
 
 Ce playbook :
-- Installe ArgoCD via Helm (`install_argocd.yml`)
-- Applique les manifests ArgoCD (`deploy_argocd.yml`) :
-  - Configuration Helm (`values.yaml`)
-  - SealedSecrets (`values.sealed.yaml`)
-  - Applications (`app-argocd-sample-app.yaml`)
+- Installe ArgoCD via Helm (`install_argocd.yml`) en consommant `infra/argocd/values.yaml`
+  comme fichier de values Helm **à l'installation** (il n'est PAS appliqué via kustomize)
+- Applique les manifests ArgoCD (`deploy_argocd.yml`) via `kubectl apply -k`, dont le
+  `kustomization.yaml` n'inclut que :
   - HTTPRoute (`httproute.yaml`)
+  - Applications (`app-argocd-sample-app.yaml`)
+  - SealedSecret repo GitHub (`values.sealed.yaml`)
+  - SealedSecret OIDC Dex (`argocd-oidc-sealedsecret.yaml`)
 
 ### 2. Flux CI/CD + GitOps (complet)
 
@@ -212,7 +214,7 @@ Le projet utilise un pipeline CI/CD combiné avec GitOps pour le déploiement de
 #### Flux de bout en bout
 
 ```
-Code change → CI build image → CI update gitops → ArgoCD sync → Application déployée
+Code change -> CI build image -> CI update gitops -> ArgoCD sync -> Application déployée
 ```
 
 #### Étape 1 : Build Docker image (CI)
@@ -294,7 +296,7 @@ argocd app sync sample-app
 ### 5. Cycle de vie d'une Application
 
 ```
-Git Push → ArgoCD détecte → Sync → Helm rend les manifests → Kubernetes applique → Pods démarrés
+Git Push -> ArgoCD détecte -> Sync -> Helm rend les manifests -> Kubernetes applique -> Pods démarrés
 ```
 
 ### 6. Mise à jour de l'objet Application
@@ -325,7 +327,7 @@ Les secrets ne doivent **jamais** être en clair dans Git. SealedSecrets permet 
 ### Flux de chiffrement/déchiffrement
 
 ```
-Secret en clair (local) → kubeseal (clé publique) → SealedSecret (Git)
+Secret en clair (local) -> kubeseal (clé publique) -> SealedSecret (Git)
                                                               ↓
                                                    Contrôleur SealedSecrets (cluster)
                                                               ↓
@@ -384,7 +386,7 @@ Copier le résultat dans `charts/sample-app/values.sealed.yaml`.
 2. Générer un nouveau token
 3. Re-sceller avec le **même nom** (`--name app-sample-app-app-secrets`)
 4. Mettre à jour `values.sealed.yaml`
-5. Commit/push → ArgoCD sync
+5. Commit/push -> ArgoCD sync
 
 ---
 
@@ -421,7 +423,7 @@ staticClients:
       - "https://argocd.15-237-15-14.nip.io/auth/callback"
 ```
 
-→ Aucune modification de Dex n'est nécessaire. Il faut seulement câbler **le côté
+-> Aucune modification de Dex n'est nécessaire. Il faut seulement câbler **le côté
 ArgoCD**.
 
 ### Configuration côté ArgoCD (`infra/argocd/values.yaml`)
@@ -535,7 +537,7 @@ ansible-playbook -i inventory.yml deploy_all.yml --tags argocd
 ### Se connecter
 
 1. Ouvrir `https://argocd.15-237-15-14.nip.io`.
-2. Cliquer sur **« Log in via Dex »**.
+2. Cliquer sur **"Log in via Dex"**.
 3. Saisir `admin@kubequest.local` + le mot de passe Dex (ou passer par Microsoft
    Entra ID).
 4. Arrivée dans ArgoCD avec le rôle **admin**.
@@ -543,7 +545,7 @@ ansible-playbook -i inventory.yml deploy_all.yml --tags argocd
 > **Accès de secours (break-glass)** : le compte local `admin` d'ArgoCD reste
 > actif (`kubectl -n argocd get secret argocd-initial-admin-secret -o
 > jsonpath='{.data.password}' | base64 -d`). Utile si Dex est indisponible. La
-> connexion locale se fait sous le formulaire « Log in via Dex ».
+> connexion locale se fait sous le formulaire "Log in via Dex".
 
 ### Mapping des rôles (RBAC)
 
@@ -553,7 +555,7 @@ Le rôle ArgoCD est déterminé **par email** (comme Grafana et Headlamp), via
 | Claim email | Rôle ArgoCD | Effet |
 | ----------- | ----------- | ----- |
 | `admin@kubequest.local` | `role:admin` | Accès complet (sync, suppression, settings) |
-| tout autre (`user@kubequest.local`, …) | `role:readonly` (défaut) | Lecture seule |
+| tout autre (`user@kubequest.local`, ...) | `role:readonly` (défaut) | Lecture seule |
 
 `scopes: "[email, groups]"` indique à ArgoCD de matcher les politiques sur les
 claims `email` **et** `groups`. Les comptes locaux Dex n'émettent pas de `groups`
@@ -565,11 +567,11 @@ p. ex. `g, <group-id>, role:admin`).
 
 | Symptôme | Piste |
 | -------- | ----- |
-| `invalid_client` / `unauthorized_client` au retour de Dex | `clientSecret` côté ArgoCD ≠ `ARGOCD_CLIENT_SECRET` côté Dex. Re-sceller avec **la même valeur** des deux côtés. |
-| `redirect_uri did not match` | `configs.cm.url` ≠ `redirectURIs` du client `argocd` dans Dex. Doit donner exactement `https://argocd.<nip>/auth/callback`. |
-| Bouton « Log in via Dex » absent | `oidc.config` non pris en compte : vérifier `kubectl -n argocd get cm argocd-cm -o yaml` et redémarrer `deploy/argocd-server`. |
+| `invalid_client` / `unauthorized_client` au retour de Dex | `clientSecret` côté ArgoCD != `ARGOCD_CLIENT_SECRET` côté Dex. Re-sceller avec **la même valeur** des deux côtés. |
+| `redirect_uri did not match` | `configs.cm.url` != `redirectURIs` du client `argocd` dans Dex. Doit donner exactement `https://argocd.<nip>/auth/callback`. |
+| Bouton "Log in via Dex" absent | `oidc.config` non pris en compte : vérifier `kubectl -n argocd get cm argocd-cm -o yaml` et redémarrer `deploy/argocd-server`. |
 | `failed to query provider ... /.well-known/openid-configuration` | Le pod `argocd-server` n'atteint pas l'`issuer` Dex (URL publique du master, **hairpin réseau**) ou l'`issuer` ne correspond pas. Vérifier la connectivité et l'égalité stricte des issuers. |
-| Connecté mais tout est en lecture seule | RBAC : email ≠ `admin@kubequest.local`, ou `scopes` ne contient pas `email`. Vérifier `argocd-rbac-cm`. |
+| Connecté mais tout est en lecture seule | RBAC : email != `admin@kubequest.local`, ou `scopes` ne contient pas `email`. Vérifier `argocd-rbac-cm`. |
 | `argocd-oidc` Secret absent | Le SealedSecret est resté en placeholder ou a échoué au déchiffrement : `kubectl -n argocd get sealedsecret,secret argocd-oidc` et logs du contrôleur sealed-secrets. |
 
 ---
@@ -601,10 +603,7 @@ spec:
   syncPolicy:
     automated:
       prune: true                     # Supprime les ressources non désirées
-      selfHeal: true                 # Corrige les drifts
-      allowEmpty: false
-    syncOptions:
-      - CreateNamespace=true
+      selfHeal: true                  # Corrige les drifts
 ```
 
 ### Politique de sync
@@ -613,7 +612,6 @@ spec:
 |--------|-------|
 | `prune: true` | Supprime les ressources présentes dans le cluster mais pas dans Git |
 | `selfHeal: true` | Corrige automatiquement les drifts (modifications manuelles) |
-| `CreateNamespace=true` | Crée le namespace s'il n'existe pas |
 
 ### Health checks
 
@@ -639,7 +637,8 @@ ArgoCD surveille l'état des ressources via des health checks :
 - Bootstrap idempotent
 
 **Implémentation** :
-- `deploy_all.yml` ne contient plus `deploy_app.yml`
+- `ansible/deploy_app.yml` existe toujours comme playbook autonome, mais n'est plus
+  importé par `deploy_all.yml`
 - Les apps sont déployées uniquement via ArgoCD Applications
 
 ### 2. Fichiers de values multiples
@@ -767,7 +766,7 @@ kubectl get secret sample-app-app-secrets -n sample-app -o jsonpath='{.data.db-p
 
 **Symptôme** :
 ```
-argocd repo list → Failed
+argocd repo list -> Failed
 ```
 
 **Cause** : Token invalide ou expiré.
@@ -793,8 +792,8 @@ kubectl -n argocd exec deploy/argocd-repo-server -- sh -c \
 
 **Symptôme** :
 ```
-argocd repo list → Failed
-git ls-remote → Success
+argocd repo list -> Failed
+git ls-remote -> Success
 ```
 
 **Cause** : Cache Redis périmé.
@@ -824,7 +823,7 @@ helm rollback argocd <NUMERO-DEPLOYED> -n argocd
 
 **Symptôme** :
 ```
-argocd repo list → server.secretkey is missing
+argocd repo list -> server.secretkey is missing
 ```
 
 **Cause** : Le secret `argocd-secret` a été écrasé.
@@ -850,13 +849,13 @@ sample-app-* (nouveau)
 **Solution** :
 1. Aligner `releaseName: app` dans l'Application
 2. Activer `prune: true`
-3. Sync ArgoCD → le doublon sera supprimé
+3. Sync ArgoCD -> le doublon sera supprimé
 
 ### Problème : Application non mise à jour après Git push
 
 **Symptôme** :
 ```
-git push → argocd app get → ancienne config
+git push -> argocd app get -> ancienne config
 ```
 
 **Cause** : L'objet Application dans le cluster n'a pas été réappliqué.

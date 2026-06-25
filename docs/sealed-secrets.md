@@ -1,4 +1,4 @@
-# Sealed Secrets — Gestion chiffrée des secrets
+# Sealed Secrets - Gestion chiffrée des secrets
 
 ## Qu'est-ce que Sealed Secrets ?
 
@@ -8,10 +8,10 @@ Conséquence : le fichier `SealedSecret` est **sûr à committer** un attaquant 
 
 Dans ce projet, Sealed Secrets protège :
 
-- les secrets applicatifs de `sample-app` (`APP_KEY` Laravel, mot de passe MySQL) → `charts/sample-app/values.sealed.yaml` ;
-- les identifiants admin de Grafana → `infra/monitoring/grafana-sealedsecret.yaml` ;
-- les secrets de Dex IDP (hash bcrypt admin, client secrets OAuth) → `infra/dex/dex-sealedsecret.yaml` ;
-- le client secret OAuth Grafana/Dex → `infra/monitoring/grafana-oauth-sealedsecret.yaml`.
+- les secrets applicatifs de `sample-app` (`APP_KEY` Laravel, mot de passe MySQL) -> `charts/sample-app/values.sealed.yaml` ;
+- les identifiants admin de Grafana -> `infra/monitoring/grafana-sealedsecret.yaml` ;
+- les secrets de Dex IDP (hash bcrypt admin, client secrets OAuth) -> `infra/dex/dex-sealedsecret.yaml` ;
+- le client secret OAuth Grafana/Dex -> `infra/monitoring/grafana-oauth-sealedsecret.yaml`.
 
 > La procédure de scellement de ces deux fichiers (ils partagent le même `GRAFANA_CLIENT_SECRET`) est décrite dans [`docs/dex.md`](dex.md).
 
