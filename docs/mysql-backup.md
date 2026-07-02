@@ -142,6 +142,44 @@ kubectl rollout status deployment/app-sample-app -n sample-app
 | PVC `Pending` | Vérifier le StorageClass et la capacité disponible sur le cluster (`kubectl describe pvc app-sample-app-mysql-backup -n sample-app`). |
 | Disque plein | Augmenter `database.backup.storage` ou réduire `retentionDays` ; supprimer manuellement d'anciens `.sql.gz` via le pod `backup-shell`. |
 | Aucun job planifié | Vérifier `database.backup.enabled: true` et que la CronJob existe (`kubectl get cronjob -n sample-app`). |
+| Pod du job `Pending` (`anti-affinity`, `PV node affinity`, `untolerated taint`) | Le PVC `local-path` est **ReadWriteOnce** : le job doit tourner sur le **même nœud** que le volume. Le pod de backup ne doit pas porter le label `app.kubernetes.io/name: sample-app` (conflit avec l'anti-affinity du Deployment). Voir la section ci-dessous. |
+
+### Job bloqué en `Pending` (scheduling)
+
+Message typique :
+
+```text
+0/4 nodes are available: ... anti-affinity ... untolerated taint(s) ...
+... didn't match PersistentVolume's node affinity
+```
+
+**Causes fréquentes :**
+
+1. **Volume `local-path` lié à un autre nœud** que celui attendu (ex. premier backup lancé via `backup-shell` sur un worker générique). Seul le nœud `kubequest/role=database` peut accéder au PVC.
+2. **Anti-affinity** : un pod `sample-app` sur le nœud cible empêchait l'ancien job (même label `app.kubernetes.io/name: sample-app`) de s'y placer.
+3. **Taint control-plane** : le master est exclu (normal).
+
+**Diagnostic :**
+
+```bash
+# Nœud où le volume est réellement provisionné
+kubectl get pv -o wide | grep mysql-backup
+kubectl describe pvc app-sample-app-mysql-backup -n sample-app
+
+# État du job / pod
+kubectl get jobs,pods -n sample-app | grep mysql-backup
+kubectl describe pod -n sample-app -l app.kubernetes.io/component=mysql-backup
+```
+
+**Correction si le PV est sur le mauvais nœud** (supprime les dumps existants sur le PVC) :
+
+```bash
+kubectl delete jobs -n sample-app -l app.kubernetes.io/component=mysql-backup
+kubectl delete pvc app-sample-app-mysql-backup -n sample-app
+# Puis helm upgrade / redeploy Ansible pour recréer le PVC sur worker3 (database)
+```
+
+Ensuite relancer un backup manuel ; le PVC sera provisionné sur le nœud database grâce au `nodeSelector` du CronJob.
 
 ## Limites actuelles
 

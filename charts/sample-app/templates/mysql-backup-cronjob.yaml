@@ -8,6 +8,7 @@ metadata:
 spec:
   accessModes:
     - ReadWriteOnce
+  storageClassName: local-path
   resources:
     requests:
       storage: {{ .Values.database.backup.storage }}
@@ -28,9 +29,13 @@ spec:
       template:
         metadata:
           labels:
-            {{- include "sample-app.labels" . | nindent 12 }}
+            app.kubernetes.io/name: {{ include "sample-app.fullname" . }}-mysql-backup
+            app.kubernetes.io/instance: {{ .Release.Name }}
+            app.kubernetes.io/component: mysql-backup
         spec:
           restartPolicy: OnFailure
+          nodeSelector:
+            kubequest/role: database
           containers:
             - name: backup
               image: "mysql:8.0"
