@@ -77,7 +77,16 @@
           --ignore-daemonsets \
           --delete-emptydir-data \
           --force \
-          --grace-period=10
+          --grace-period=10 \
+          --timeout=60s
+      register: drain_result
+      failed_when: false
+
+    - name: "[DEMO] Avertir si le drain est incomplet"
+      tags: [with-reschedule, without-reschedule]
+      ansible.builtin.debug:
+        msg: "Le drain n'a pas pu évincer tous les pods (gatekeeper?)."
+      when: drain_result.rc != 0
 
     - name: "[DEMO] Etat après drain"
       tags: [with-reschedule, without-reschedule]
