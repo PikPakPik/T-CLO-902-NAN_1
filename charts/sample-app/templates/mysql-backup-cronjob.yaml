@@ -74,10 +74,17 @@ spec:
                     -h "${MYSQL_HOST}" \
                     -u "${MYSQL_USER}" \
                     --single-transaction \
+                    --no-tablespaces \
                     --routines \
                     --triggers \
                     "${MYSQL_DATABASE}" | gzip > "${FILENAME}"
                   unset MYSQL_PWD
+                  SIZE=$(wc -c < "${FILENAME}")
+                  if [ "${SIZE}" -lt 100 ]; then
+                    echo "ERREUR: dump vide ou invalide (${SIZE} octets)" >&2
+                    rm -f "${FILENAME}"
+                    exit 1
+                  fi
                   echo "Backup terminé : ${FILENAME} ($(du -h "${FILENAME}" | cut -f1))"
                   echo "Suppression des backups de plus de ${RETENTION_DAYS} jours..."
                   find "${BACKUP_DIR}" -name "*.sql.gz" -mtime +"${RETENTION_DAYS}" -delete
